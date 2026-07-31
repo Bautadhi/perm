@@ -69,7 +69,18 @@ function updateNotifBellCounter() {
   bellBtn.style.display = 'flex';
 
   const userNotifs = getAccessibleNotifications();
-  const unreadCount = userNotifs.filter(n => !n.readBy.includes(currentUser.id) && !n.readBy.includes(currentUser.username)).length;
+  let unreadCount = userNotifs.filter(n => !n.readBy.includes(currentUser.id) && !n.readBy.includes(currentUser.username)).length;
+
+  // Include pending approval requests count for DM or SERVICE
+  if (currentUser.category === 'DM') {
+    const requests = getRequestsFromDB();
+    const pendingDMCount = requests.filter(r => r.status === 'PENDING' && r.serviceApprove).length;
+    unreadCount = Math.max(unreadCount, pendingDMCount);
+  } else if (currentUser.category === 'SERVICE') {
+    const requests = getAccessibleRequests();
+    const pendingServiceCount = requests.filter(r => r.status === 'PENDING' && !r.serviceApprove).length;
+    unreadCount = Math.max(unreadCount, pendingServiceCount);
+  }
 
   if (unreadCount > 0) {
     badgeEl.textContent = unreadCount > 99 ? '99+' : unreadCount;
@@ -552,11 +563,37 @@ async function pullCentralCloudDB() {
     }
 
     if (Array.isArray(data.chat)) {
-      localStorage.setItem(CHAT_DB_KEY, JSON.stringify(data.chat));
+      const prevChatHash = localStorage.getItem(CHAT_DB_KEY) || '[]';
+      const newChatHash = JSON.stringify(data.chat);
+      if (prevChatHash !== newChatHash) {
+        localStorage.setItem(CHAT_DB_KEY, newChatHash);
+        const popupBantuan = document.getElementById('popupBantuan');
+        if (popupBantuan && popupBantuan.classList.contains('show')) {
+          if (isAdminChat) {
+            if (currentRoom) {
+              loadChatAdmin(currentRoom);
+            } else {
+              loadDaftarChatAdmin();
+            }
+          } else {
+            loadChatUser();
+          }
+        }
+        cekUnreadNotif();
+      }
     }
 
     if (Array.isArray(data.chatRooms)) {
-      localStorage.setItem(CHAT_ROOM_DB_KEY, JSON.stringify(data.chatRooms));
+      const prevRoomHash = localStorage.getItem(CHAT_ROOM_DB_KEY) || '[]';
+      const newRoomHash = JSON.stringify(data.chatRooms);
+      if (prevRoomHash !== newRoomHash) {
+        localStorage.setItem(CHAT_ROOM_DB_KEY, newRoomHash);
+        const popupBantuan = document.getElementById('popupBantuan');
+        if (popupBantuan && popupBantuan.classList.contains('show') && isAdminChat) {
+          if (!currentRoom) loadDaftarChatAdmin();
+        }
+        cekUnreadNotif();
+      }
     }
 
     if (Array.isArray(data.notifications)) {
