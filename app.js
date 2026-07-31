@@ -561,6 +561,7 @@ async function pullCentralCloudDB() {
 
     if (Array.isArray(data.notifications)) {
       localStorage.setItem(NOTIFICATIONS_DB_KEY, JSON.stringify(data.notifications));
+      updateNotifBellCounter();
     }
 
     if (needUIRefresh && currentUser) {
@@ -1441,7 +1442,7 @@ function hapusRow(btn) {
   if (container.children.length === 0) tambahRow();
 }
 
-function kompresiFoto(file, maxDimension = 420, quality = 0.35) {
+function kompresiFoto(file, maxDimension = 650, quality = 0.55) {
   return new Promise((resolve) => {
     if (!file || !file.type.startsWith('image/')) {
       resolve('');
@@ -1499,7 +1500,7 @@ async function previewFoto(event) {
   for (const file of files) {
     if (currentPhotos.length < 5) {
       try {
-        const compressedData = await kompresiFoto(file, 420, 0.35);
+        const compressedData = await kompresiFoto(file, 650, 0.55);
         if (compressedData) {
           currentPhotos.push(compressedData);
         }
@@ -2613,6 +2614,15 @@ function loadDaftarChatAdmin() {
 function bukaRoomAdmin(room, user) {
   currentRoom = room;
   currentChatUser = user;
+
+  const rooms = JSON.parse(localStorage.getItem(CHAT_ROOM_DB_KEY) || '[]');
+  const rIdx = rooms.findIndex(x => x.room === room);
+  if (rIdx !== -1) {
+    rooms[rIdx].unreadAdmin = 0;
+    localStorage.setItem(CHAT_ROOM_DB_KEY, JSON.stringify(rooms));
+    pushCentralCloudDB();
+  }
+
   document.getElementById('chatList').style.display = 'none';
   document.getElementById('chatBody').style.display = 'block';
   document.getElementById('chatFooter').style.display = 'flex';
@@ -2686,6 +2696,9 @@ function kirimPesanChat() {
       tanggal: getFormattedDateDDMMYYYY() + ' ' + new Date().toLocaleTimeString('id-ID')
     });
     localStorage.setItem(CHAT_DB_KEY, JSON.stringify(allChats));
+    localStorage.setItem(CHAT_ROOM_DB_KEY, JSON.stringify(rooms));
+    pushCentralCloudDB();
+
     txt.value = '';
     loadChatAdmin(currentRoom);
   } else {
@@ -2707,6 +2720,7 @@ function kirimPesanChat() {
       rooms.push({ room, user: currentUser.username, last: pesan, unreadAdmin: 1 });
     }
     localStorage.setItem(CHAT_ROOM_DB_KEY, JSON.stringify(rooms));
+    pushCentralCloudDB();
 
     txt.value = '';
     loadChatUser();
