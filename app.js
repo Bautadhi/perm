@@ -14,7 +14,8 @@ const STORAGE_KEYS = {
   SESSION: 'teknisi_current_session',
   THEME: 'teknisi_app_theme',
   SHEETS_CACHE: 'google_sheets_cache',
-  PIPO_CACHE: 'pipo_sheets_cache'
+  PIPO_CACHE: 'pipo_sheets_cache',
+  FINISH_HISTORY: 'teknisi_finish_history'
 };
 
 let state = {
@@ -32,6 +33,7 @@ let state = {
   },
   draftList: [],
   history: [],
+  finishHistory: [],
   adminUsers: [],
   pendingDeleteDraftItemId: null,
   pendingDeleteUserId: null,
@@ -97,6 +99,7 @@ const DOM = {
   headerNik: document.getElementById('header-nik'),
   headerPswStatus: document.getElementById('header-psw-status'),
   headerPswText: document.getElementById('header-psw-text'),
+  headerBtnMissing: document.getElementById('header-btn-missing'),
   headerNotifBtn: document.getElementById('header-notif-btn'),
   headerBellBadge: document.getElementById('header-bell-badge'),
   sheetUpdateBar: document.getElementById('sheet-update-bar'),
@@ -108,13 +111,37 @@ const DOM = {
   btnSelectModeScan: document.getElementById('btn-select-mode-scan'),
   btnSelectModeTeknisi: document.getElementById('btn-select-mode-teknisi'),
   btnSelectModePipo: document.getElementById('btn-select-mode-pipo'),
+  btnSelectModeFinish: document.getElementById('btn-select-mode-finish'),
 
   // Part Pengganti (PIPO) Controls
-  btnRefreshPipo: document.getElementById('btn-refresh-pipo'),
   inputSearchPipo: document.getElementById('input-search-pipo'),
   btnClearSearchPipo: document.getElementById('btn-clear-search-pipo'),
   pipoCount: document.getElementById('pipo-count'),
   pipoListContainer: document.getElementById('pipo-list-container'),
+
+  // Finish Harian Controls (Google Form Fields)
+  formFinishHarian: document.getElementById('form-finish-harian'),
+  finishNama: document.getElementById('finish-nama'),
+  finishTgl: document.getElementById('finish-tgl'),
+  finishCaseOutdoor: document.getElementById('finish-case-outdoor'),
+  finishFinishOutdoor: document.getElementById('finish-finish-outdoor'),
+  finishFinishIndoor: document.getElementById('finish-finish-indoor'),
+  finishWipComp: document.getElementById('finish-wip-comp'),
+  finishWipTech: document.getElementById('finish-wip-tech'),
+  finishBatal: document.getElementById('finish-batal'),
+  finishAntar: document.getElementById('finish-antar'),
+  finishNoVisit: document.getElementById('finish-no-visit'),
+  finishKet: document.getElementById('finish-ket'),
+  btnSubmitFinish: document.getElementById('btn-submit-finish'),
+  finishHistoryList: document.getElementById('finish-history-list'),
+  btnOpenMissingModal: document.getElementById('btn-open-missing-modal'),
+  modalMissingFinish: document.getElementById('modal-missing-finish'),
+  btnCloseMissingModal: document.getElementById('btn-close-missing-modal'),
+  btnDismissMissingModal: document.getElementById('btn-dismiss-missing-modal'),
+  btnRefreshMissing: document.getElementById('btn-refresh-missing'),
+  syncIconMissing: document.getElementById('sync-icon-missing'),
+  missingFinishSummary: document.getElementById('missing-finish-summary'),
+  missingFinishList: document.getElementById('missing-finish-list'),
 
   // Navigation Badges
   navPendingBadge: document.getElementById('nav-pending-badge'),
@@ -247,6 +274,11 @@ function loadStoredData() {
   if (storedHistory) {
     try { state.history = JSON.parse(storedHistory); } catch (e) {}
   }
+  // Load Finish Harian History
+  const storedFinishHistory = localStorage.getItem(STORAGE_KEYS.FINISH_HISTORY);
+  if (storedFinishHistory) {
+    try { state.finishHistory = JSON.parse(storedFinishHistory); } catch (e) {}
+  }
 }
 
 function applyTheme(themeName) {
@@ -332,6 +364,7 @@ function showAppScreen() {
 
   try {
     history.replaceState({ tab: 'tab-menu' }, '', '#tab-menu');
+    history.pushState({ tab: 'tab-menu' }, '', '#tab-menu');
   } catch (e) {}
 
   switchTab('tab-menu', false);
@@ -620,6 +653,24 @@ function setupEventListeners() {
       requestTabSwitch('tab-pipo');
     });
   }
+  if (DOM.btnSelectModeFinish) {
+    DOM.btnSelectModeFinish.addEventListener('click', () => {
+      requestTabSwitch('tab-finish');
+    });
+  }
+  if (DOM.btnSubmitFinish) {
+    DOM.btnSubmitFinish.addEventListener('click', openFinishConfirmModal);
+  }
+  if (DOM.headerBtnMissing) DOM.headerBtnMissing.addEventListener('click', () => openMissingModal(false));
+  if (DOM.btnOpenMissingModal) DOM.btnOpenMissingModal.addEventListener('click', () => openMissingModal(false));
+  if (DOM.btnCloseMissingModal) DOM.btnCloseMissingModal.addEventListener('click', closeMissingModal);
+  if (DOM.btnDismissMissingModal) DOM.btnDismissMissingModal.addEventListener('click', closeMissingModal);
+  if (DOM.btnRefreshMissing) {
+    DOM.btnRefreshMissing.addEventListener('click', () => {
+      showToast('🔄 Memperbarui data dari Google Sheet...', 'info');
+      openMissingModal(false);
+    });
+  }
 
   // PIPO Search & Refresh Listeners
   if (DOM.btnRefreshPipo) {
@@ -742,11 +793,18 @@ function setupEventListeners() {
   if (DOM.btnCancelUserForm) DOM.btnCancelUserForm.addEventListener('click', closeUserModal);
   if (DOM.btnSaveUserForm) DOM.btnSaveUserForm.addEventListener('click', handleSaveUserForm);
 
+  let lastBackPressTime = 0;
+
   // Android & Hardware Back Button Navigation Handler
   window.addEventListener('popstate', (e) => {
     if (!state.isLoggedIn) return;
 
     // 1. Close active modals first if open
+    if (DOM.modalMissingFinish && DOM.modalMissingFinish.classList.contains('active')) {
+      closeMissingModal();
+      try { history.pushState({ tab: state.activeTab }, '', '#' + state.activeTab); } catch (err) {}
+      return;
+    }
     if (DOM.modalUserForm && DOM.modalUserForm.classList.contains('active')) {
       closeUserModal();
       try { history.pushState({ tab: state.activeTab }, '', '#' + state.activeTab); } catch (err) {}
@@ -758,10 +816,25 @@ function setupEventListeners() {
       return;
     }
 
-    // 2. Determine target tab: default to 'tab-menu' if e.state is missing or empty
+    // 2. Intercept Back when at Main Menu (tab-menu)
+    if (state.activeTab === 'tab-menu') {
+      const now = Date.now();
+      if (now - lastBackPressTime < 2000) {
+        // Press twice within 2 seconds: Allow exit / back out
+        return;
+      }
+
+      // First press back: push state back & show exit warning toast
+      lastBackPressTime = now;
+      try { history.pushState({ tab: 'tab-menu' }, '', '#tab-menu'); } catch (err) {}
+      showToast('Tekan sekali lagi untuk keluar', 'warning');
+      return;
+    }
+
+    // 3. Determine target tab: default to 'tab-menu' if e.state is missing or empty
     const targetTab = (e.state && e.state.tab) ? e.state.tab : 'tab-menu';
 
-    // 3. Tab Navigation: check if leaving tab-scan with draft items
+    // 4. Tab Navigation: check if leaving tab-scan with draft items
     if (state.activeTab === 'tab-scan' && state.draftList.length > 0 && targetTab !== 'tab-scan') {
       try { history.pushState({ tab: 'tab-scan' }, '', '#tab-scan'); } catch (err) {}
       state.modalAction = 'switchTabWarn';
@@ -877,6 +950,8 @@ async function handleConfirmModalOk() {
 
   if (currentAction === 'submit') {
     await handleSubmitBatchToSupabase();
+  } else if (currentAction === 'submitFinish') {
+    await handleSubmitFinish();
   } else if (currentAction === 'logout') {
     performLogout();
   } else if (currentAction === 'clearHistory') {
@@ -1181,28 +1256,36 @@ function updateModeNavVisibility(targetTabId) {
     state.currentMode = 'teknisi';
   } else if (targetTabId === 'tab-pipo') {
     state.currentMode = 'pipo';
+  } else if (targetTabId === 'tab-finish') {
+    state.currentMode = 'finish';
   }
 
   // 1. PSW Status Badge (PSW: ON/OFF)
-  // Hide on teknisi mode & menu mode, show only on scan mode or profile
+  // Hide on PIPO, Finish, Teknisi portal, and Menu hub. Show ONLY on Scan mode or Profile.
   if (DOM.headerPswStatus) {
-    DOM.headerPswStatus.classList.toggle('hidden', state.currentMode === 'teknisi' || state.currentMode === 'menu');
+    DOM.headerPswStatus.classList.toggle('hidden', state.currentMode !== 'scan' && targetTabId !== 'tab-profile');
   }
 
-  // 2. Header Bell Notification Button (#header-notif-btn)
+  // 2. Header LIHAT DATA Button (#header-btn-missing)
+  // Show ONLY in finish mode (tab-finish), replacing the PSW badge in top right header!
+  if (DOM.headerBtnMissing) {
+    DOM.headerBtnMissing.classList.toggle('hidden', targetTabId !== 'tab-finish');
+  }
+
+  // 3. Header Bell Notification Button (#header-notif-btn)
   // Show ONLY when in teknisi mode (Pending / Performa / Notif), hide in scan mode & menu hub!
   if (DOM.headerNotifBtn) {
     DOM.headerNotifBtn.classList.toggle('hidden', state.currentMode !== 'teknisi');
   }
 
-  // 3. On tab-menu (Menu Utama Hub), hide bottom navbar & sheet update bar completely!
+  // 4. On tab-menu (Menu Utama Hub), hide bottom navbar & sheet update bar completely!
   if (targetTabId === 'tab-menu') {
     if (DOM.appNav) DOM.appNav.classList.add('hidden');
     if (DOM.sheetUpdateBar) DOM.sheetUpdateBar.classList.add('hidden');
     return;
   }
 
-  // 4. On sub-pages, show bottom navbar
+  // 5. On sub-pages, show bottom navbar
   if (DOM.appNav) DOM.appNav.classList.remove('hidden');
 
   // Show sheet update bar only when in teknisi mode
@@ -1248,6 +1331,14 @@ function switchTab(targetTabId, pushState = true) {
   DOM.tabContents.forEach(content => {
     content.classList.toggle('active', content.id === targetTabId);
   });
+
+  if (targetTabId === 'tab-pipo') {
+    renderPipoTab();
+  }
+  if (targetTabId === 'tab-finish') {
+    prepareFinishForm();
+    renderFinishHistory();
+  }
 
   lucide.createIcons();
 }
@@ -2416,6 +2507,449 @@ function renderPipoTab() {
   }
 
   DOM.pipoListContainer.innerHTML = html;
+}
+
+// ==========================================================
+// MODULE INPUT FINISH HARIAN TEKNISI (GOOGLE FORM REPLACEMENT)
+// ==========================================================
+const GOOGLE_FORM_FINISH_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfHo-PIyYWBsEcfUfkpA8vc7AyeuAMNRot4wuU5T3xSNfcYnA/formResponse';
+
+const VALID_FORM_TECHNICIANS = [
+  'Amin Prayogo',
+  'Redi Takwa',
+  'Zulfi Fajriansyah',
+  'Mursyid Alfiansyah',
+  'M.Ilman',
+  'SID Kenu ngudi Raharjo',
+  'Irfan Taufan',
+  'Roni Surya Nugraha'
+];
+
+function prepareFinishForm() {
+  if (DOM.finishTgl && !DOM.finishTgl.value) {
+    const today = new Date().toISOString().split('T')[0];
+    DOM.finishTgl.value = today;
+  }
+
+  // Clear numeric inputs so they are empty by default (no 0)
+  if (DOM.finishCaseOutdoor) DOM.finishCaseOutdoor.value = '';
+  if (DOM.finishFinishOutdoor) DOM.finishFinishOutdoor.value = '';
+  if (DOM.finishFinishIndoor) DOM.finishFinishIndoor.value = '';
+  if (DOM.finishWipComp) DOM.finishWipComp.value = '';
+  if (DOM.finishWipTech) DOM.finishWipTech.value = '';
+  if (DOM.finishBatal) DOM.finishBatal.value = '';
+  if (DOM.finishAntar) DOM.finishAntar.value = '';
+  if (DOM.finishNoVisit) DOM.finishNoVisit.value = '';
+  if (DOM.finishKet) DOM.finishKet.value = '';
+
+  if (DOM.finishNama) {
+    const rawList = [...VALID_FORM_TECHNICIANS];
+    if (state.adminUsers && state.adminUsers.length > 0) {
+      state.adminUsers.forEach(u => {
+        if (u.nama && u.nama.trim()) rawList.push(u.nama.trim());
+      });
+    }
+
+    // Deduplicate case-insensitively
+    const seen = new Set();
+    const choices = [];
+    rawList.forEach(name => {
+      const normalized = name.trim().toLowerCase();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        choices.push(name.trim());
+      }
+    });
+
+    const currentSelected = DOM.finishNama.value;
+    DOM.finishNama.innerHTML = choices.map(t =>
+      `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`
+    ).join('');
+
+    const loggedInName = state.profile ? state.profile.nama : (state.user ? state.user.nama : '');
+
+    if (state.isAdmin) {
+      DOM.finishNama.disabled = false;
+      if (currentSelected && choices.includes(currentSelected)) {
+        DOM.finishNama.value = currentSelected;
+      }
+    } else {
+      DOM.finishNama.disabled = true;
+      let match = choices.find(
+        t => t.toLowerCase().trim() === loggedInName.toLowerCase().trim()
+      );
+      if (!match) {
+        match = choices.find(
+          t => t.toLowerCase().includes(loggedInName.toLowerCase().trim()) || loggedInName.toLowerCase().includes(t.toLowerCase().trim())
+        );
+      }
+      if (match) {
+        DOM.finishNama.value = match;
+      } else if (loggedInName) {
+        const normLoggedIn = loggedInName.trim().toLowerCase();
+        if (!seen.has(normLoggedIn)) {
+          const opt = document.createElement('option');
+          opt.value = loggedInName.trim();
+          opt.textContent = loggedInName.trim();
+          DOM.finishNama.appendChild(opt);
+        }
+        DOM.finishNama.value = loggedInName.trim();
+      }
+    }
+  }
+}
+
+function openFinishConfirmModal() {
+  const tglVal = DOM.finishTgl ? DOM.finishTgl.value : '';
+  if (!tglVal) {
+    showToast('⚠️ Mohon pilih tanggal laporan!', 'warning');
+    if (DOM.finishTgl) DOM.finishTgl.focus();
+    return;
+  }
+
+  state.modalAction = 'submitFinish';
+  DOM.modalConfirmTitle.innerHTML = `<i data-lucide="clipboard-check"></i> Konfirmasi Kirim Finish Harian`;
+  DOM.modalConfirmMsg.textContent = 'Apakah data yang Anda masukkan sudah benar?';
+  DOM.modalConfirmOkText.textContent = 'Ya, Kirim Laporan';
+  DOM.modalConfirm.classList.add('active');
+  lucide.createIcons();
+}
+
+const INDONESIAN_HOLIDAYS_2026 = [
+  '2026-01-01', '2026-01-16', '2026-02-17', '2026-03-19', '2026-03-20',
+  '2026-03-21', '2026-04-03', '2026-04-05', '2026-05-01', '2026-05-14',
+  '2026-05-27', '2026-05-31', '2026-06-01', '2026-06-16', '2026-08-17',
+  '2026-08-25', '2026-12-25'
+];
+
+function isNationalHolidayOrSunday(d) {
+  if (d.getDay() === 0) return true; // Sunday
+  const isoStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return INDONESIAN_HOLIDAYS_2026.includes(isoStr);
+}
+
+function formatDateIndoFull(d) {
+  const DAYS_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const MONTHS_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  return `${DAYS_ID[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')} ${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function normalizeDateString(str) {
+  if (!str) return '';
+  str = String(str).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const dmyMatch = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0');
+    const month = dmyMatch[2].padStart(2, '0');
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+  const ymdMatch = str.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, '0');
+    const day = ymdMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return str;
+}
+
+async function fetchFinishSheetData() {
+  const filledDatesSet = new Set();
+  const targetTechName = DOM.finishNama ? DOM.finishNama.value : (state.profile ? state.profile.nama : '');
+
+  // 1. Fetch directly from Google Sheet tabs (Form Responses 1 / DATA)
+  let rows = [];
+  try {
+    const table = await fetchGVizSheet('Form Responses 1');
+    rows = extractMatrixFromGViz(table);
+  } catch (e1) {
+    try {
+      const table = await fetchGVizSheet('DATA');
+      rows = extractMatrixFromGViz(table);
+    } catch (e2) {
+      console.warn('Gagal fetch sheet finish:', e2);
+    }
+  }
+
+  if (rows && rows.length > 0) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length === 0) continue;
+      let rowNama = '';
+      let rowTgl = '';
+
+      for (let c = 0; c < row.length; c++) {
+        const cellVal = String(row[c] || '').trim();
+        if (!cellVal) continue;
+
+        if (targetTechName && matchTechName(cellVal, targetTechName)) {
+          rowNama = cellVal;
+        }
+
+        const norm = normalizeDateString(cellVal);
+        if (norm && /^\d{4}-\d{2}-\d{2}$/.test(norm)) {
+          rowTgl = norm;
+        }
+      }
+
+      if (rowNama && rowTgl) {
+        filledDatesSet.add(rowTgl);
+      }
+    }
+  }
+
+  // 2. Also merge locally submitted items in state.finishHistory
+  (state.finishHistory || []).forEach(item => {
+    if (item.nama && targetTechName && matchTechName(item.nama, targetTechName)) {
+      const normTgl = normalizeDateString(item.tgl);
+      if (normTgl) filledDatesSet.add(normTgl);
+    }
+  });
+
+  return filledDatesSet;
+}
+
+async function openMissingModal(isAutoRefresh = false) {
+  if (!DOM.modalMissingFinish) return;
+
+  DOM.modalMissingFinish.classList.add('active');
+
+  if (DOM.syncIconMissing) DOM.syncIconMissing.classList.add('spinning');
+
+  if (!isAutoRefresh && DOM.missingFinishSummary) {
+    DOM.missingFinishSummary.innerHTML = `
+      <div style="text-align:center; padding:14px; color:var(--text-muted);">
+        <i data-lucide="loader-2" class="spin-lg"></i>
+        <p style="margin-top:6px; font-size:12px; font-weight:600;">Memuat data terbaru dari Google Sheet...</p>
+      </div>`;
+    lucide.createIcons();
+  }
+
+  try {
+    const filledDatesSet = await fetchFinishSheetData();
+    renderMissingDatesList(filledDatesSet);
+  } catch (err) {
+    console.warn('Error openMissingModal:', err);
+  } finally {
+    if (DOM.syncIconMissing) DOM.syncIconMissing.classList.remove('spinning');
+  }
+
+  startMissingAutoRefresh();
+}
+
+function startMissingAutoRefresh() {
+  stopMissingAutoRefresh();
+  state.missingModalTimer = setInterval(() => {
+    if (DOM.modalMissingFinish && DOM.modalMissingFinish.classList.contains('active')) {
+      openMissingModal(true);
+    } else {
+      stopMissingAutoRefresh();
+    }
+  }, 10000); // Auto refresh every 10 seconds
+}
+
+function stopMissingAutoRefresh() {
+  if (state.missingModalTimer) {
+    clearInterval(state.missingModalTimer);
+    state.missingModalTimer = null;
+  }
+}
+
+function renderMissingDatesList(filledDatesSet) {
+  const targetTechName = DOM.finishNama ? DOM.finishNama.value : (state.profile ? state.profile.nama : '');
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const todayDate = now.getDate();
+
+  const missingDates = [];
+  let totalWorkingDays = 0;
+  let filledCount = 0;
+
+  for (let day = 1; day <= todayDate; day++) {
+    const d = new Date(year, month, day);
+    if (!isNationalHolidayOrSunday(d)) {
+      totalWorkingDays++;
+      const isoStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (filledDatesSet.has(isoStr)) {
+        filledCount++;
+      } else {
+        missingDates.push({ dateStr: isoStr, dateObj: d });
+      }
+    }
+  }
+
+  const MONTHS_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${MONTHS_ID[month]} ${year}`;
+
+  if (DOM.missingFinishSummary) {
+    DOM.missingFinishSummary.innerHTML = `
+      <div style="background:var(--card-bg-light); border-left:3px solid var(--primary); padding:8px 10px; border-radius:6px; margin-bottom:8px;">
+        <strong style="color:var(--text-color);">${escapeHtml(targetTechName || 'Teknisi')}</strong> &bull; Periode: <strong>${monthLabel}</strong> (s/d Hari Ini)<br/>
+        <span>Total Hari Kerja: <strong>${totalWorkingDays} hari</strong> | Terisi: <strong style="color:var(--success);">${filledCount}</strong> | Belum Isi: <strong style="color:var(--danger);">${missingDates.length}</strong></span>
+      </div>`;
+  }
+
+  if (DOM.missingFinishList) {
+    if (missingDates.length === 0) {
+      DOM.missingFinishList.innerHTML = `
+        <div style="text-align:center; padding:20px 10px; color:var(--success);">
+          <i data-lucide="check-circle-2" style="width:40px; height:40px; margin-bottom:6px;"></i>
+          <p style="font-weight:700; font-size:13px; margin:0;">Luar Biasa! Semua Laporan Terisi</p>
+          <span style="font-size:11px; color:var(--text-muted);">Tidak ada tanggal kerja yang terlewat bulan ini.</span>
+        </div>`;
+    } else {
+      DOM.missingFinishList.innerHTML = missingDates.map(item => `
+        <div class="missing-date-card flex-between align-center" onclick="selectMissingDate('${item.dateStr}')" style="background:var(--card-bg-light); padding:10px 12px; border-radius:8px; border:1px solid var(--border-color); cursor:pointer; transition:all 0.2s ease;">
+          <div>
+            <div style="font-weight:700; font-size:13px; color:var(--text-color);">${escapeHtml(formatDateIndoFull(item.dateObj))}</div>
+            <div style="font-size:10.5px; color:var(--danger); margin-top:1px;"><i data-lucide="alert-circle" style="width:11px; height:11px; vertical-align:middle; margin-right:2px;"></i>Belum ada laporan finish harian</div>
+          </div>
+          <button type="button" class="btn btn-primary btn-xs" style="font-weight:600; padding:4px 8px; font-size:11px;">
+            Pilih Tanggal <i data-lucide="arrow-right" style="width:12px; height:12px;"></i>
+          </button>
+        </div>
+      `).join('');
+    }
+  }
+
+  lucide.createIcons();
+}
+
+function closeMissingModal() {
+  stopMissingAutoRefresh();
+  if (DOM.modalMissingFinish) DOM.modalMissingFinish.classList.remove('active');
+}
+
+window.selectMissingDate = function(dateStr) {
+  if (DOM.finishTgl) {
+    DOM.finishTgl.value = dateStr;
+  }
+  closeMissingModal();
+  showToast(`📅 Tanggal ${dateStr} dipilih untuk diisi!`, 'info');
+};
+
+async function handleSubmitFinish() {
+  const namaTeknisi = DOM.finishNama ? DOM.finishNama.value.trim() : (state.user ? state.user.nama : (state.loggedInUser || ''));
+  const tglVal = DOM.finishTgl ? DOM.finishTgl.value : '';
+  const caseOutdoor = (DOM.finishCaseOutdoor && DOM.finishCaseOutdoor.value.trim() !== '') ? DOM.finishCaseOutdoor.value.trim() : '0';
+  const finishOutdoor = (DOM.finishFinishOutdoor && DOM.finishFinishOutdoor.value.trim() !== '') ? DOM.finishFinishOutdoor.value.trim() : '0';
+  const finishIndoor = (DOM.finishFinishIndoor && DOM.finishFinishIndoor.value.trim() !== '') ? DOM.finishFinishIndoor.value.trim() : '0';
+  const wipComp = (DOM.finishWipComp && DOM.finishWipComp.value.trim() !== '') ? DOM.finishWipComp.value.trim() : '0';
+  const wipTech = (DOM.finishWipTech && DOM.finishWipTech.value.trim() !== '') ? DOM.finishWipTech.value.trim() : '0';
+  const caseBatal = (DOM.finishBatal && DOM.finishBatal.value.trim() !== '') ? DOM.finishBatal.value.trim() : '0';
+  const pengembalian = (DOM.finishAntar && DOM.finishAntar.value.trim() !== '') ? DOM.finishAntar.value.trim() : '0';
+  const noVisit = (DOM.finishNoVisit && DOM.finishNoVisit.value.trim() !== '') ? DOM.finishNoVisit.value.trim() : '0';
+  const ket = DOM.finishKet ? DOM.finishKet.value.trim() : '';
+
+  if (!tglVal) {
+    showToast('⚠️ Mohon pilih tanggal laporan!', 'warning');
+    if (DOM.finishTgl) DOM.finishTgl.focus();
+    return;
+  }
+
+  // Match technician name to Google Form dropdown option
+  let matchedNama = VALID_FORM_TECHNICIANS.find(
+    t => t.toLowerCase().trim() === namaTeknisi.toLowerCase().trim()
+  );
+  if (!matchedNama) {
+    matchedNama = VALID_FORM_TECHNICIANS.find(
+      t => t.toLowerCase().includes(namaTeknisi.toLowerCase().trim()) || namaTeknisi.toLowerCase().includes(t.toLowerCase().trim())
+    ) || namaTeknisi;
+  }
+
+  // Send directly to Google Form endpoint
+  const formData = new URLSearchParams();
+  formData.append('entry.969834049', matchedNama);
+
+  if (tglVal) {
+    const parts = tglVal.split('-');
+    if (parts.length === 3) {
+      formData.append('entry.768881015_year', parts[0]);
+      formData.append('entry.768881015_month', parts[1]);
+      formData.append('entry.768881015_day', parts[2]);
+    }
+    formData.append('entry.768881015', tglVal);
+  }
+
+  formData.append('entry.70099420', caseOutdoor);
+  formData.append('entry.700809225', finishOutdoor);
+  formData.append('entry.1959698707', finishIndoor);
+  formData.append('entry.1347707686', wipComp);
+  formData.append('entry.696681271', wipTech);
+  formData.append('entry.1529107143', caseBatal);
+  formData.append('entry.1877397193', pengembalian);
+  formData.append('entry.700484031', noVisit);
+  formData.append('entry.2130929922', ket);
+
+  try {
+    fetch(GOOGLE_FORM_FINISH_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData
+    }).catch(err => console.warn('Google Form submit error:', err));
+  } catch (err) {
+    console.warn('Submit error:', err);
+  }
+
+  const entry = {
+    timestamp: new Date().toLocaleString('id-ID'),
+    nama: matchedNama,
+    tgl: tglVal,
+    outdoor: caseOutdoor,
+    finishOutdoor: finishOutdoor,
+    finishIndoor: finishIndoor,
+    wipComp: wipComp,
+    wipTech: wipTech,
+    batal: caseBatal,
+    antar: pengembalian,
+    noVisit: noVisit,
+    ket: ket
+  };
+
+  if (!state.finishHistory) state.finishHistory = [];
+  state.finishHistory.unshift(entry);
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.FINISH_HISTORY, JSON.stringify(state.finishHistory));
+  } catch (e) {}
+
+  renderFinishHistory();
+  prepareFinishForm();
+
+  showToast('✅ Finish Harian berhasil dikirim ke Sheet!', 'success');
+  playBeepSound();
+}
+
+function renderFinishHistory() {
+  if (!DOM.finishHistoryList) return;
+  const list = state.finishHistory || [];
+
+  if (list.length === 0) {
+    DOM.finishHistoryList.innerHTML = `
+      <div class="empty-state-sm">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted);margin-bottom:6px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line></svg>
+        <p>Belum ada riwayat finish harian yang di-submit.</p>
+      </div>`;
+    return;
+  }
+
+  DOM.finishHistoryList.innerHTML = list.map(item => `
+    <div class="finish-history-card">
+      <div class="flex-between align-center mb-1">
+        <span style="font-size:11px; font-weight:600; color:var(--primary);">${escapeHtml(item.nama)}</span>
+        <span style="font-size:10px; color:var(--text-muted);">${escapeHtml(item.timestamp)}</span>
+      </div>
+      <div style="font-weight:700; font-size:13px; color:var(--text-color);">Tanggal: ${escapeHtml(item.tgl)}</div>
+      <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">
+        Finish In: ${escapeHtml(item.finishIndoor)} | Finish Out: ${escapeHtml(item.finishOutdoor)} | WIP Comp: ${escapeHtml(item.wipComp)} | Batal: ${escapeHtml(item.batal)}
+      </div>
+      ${item.ket ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic; margin-top:2px;">Ket: ${escapeHtml(item.ket)}</div>` : ''}
+    </div>
+  `).join('');
 }
 
 window.loadMorePipoItems = function() {
