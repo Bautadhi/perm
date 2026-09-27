@@ -1,41 +1,658 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Permintaan Toko</title>
-    <style>
-        html, body {
-            background-color: #ffffff;
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            width: 100%;
-            overflow: hidden;
-        }
-    </style>
-    <script>
-        (function() {
-            var URL_HP = 'https://polytasik-pixel.github.io/permintaanToko/';
-            var URL_PC = 'https://polytasik-pixel.github.io/permintaanTokoo/';
-            
-            var ua = navigator.userAgent || navigator.vendor || window.opera;
-            var isMobile = /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(ua) ||
-                           (window.innerWidth <= 768) ||
-                           (/Macintosh/i.test(ua) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>TASIKMALAYA</title>
+  
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- HTML5 QR Code Scanner Library -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  
+  <!-- Supabase JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-            window.location.replace(isMobile ? URL_HP : URL_PC);
-        })();
-    </script>
+  <!-- App Favicon (Part Box & Laser Scanner Icon) -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <noscript>
-        <div style="font-family: sans-serif; text-align: center; padding: 40px; color: #333;">
-            <h2>Permintaan Toko</h2>
-            <p>Silakan pilih versi yang sesuai dengan perangkat Anda:</p>
-            <p><a href="https://polytasik-pixel.github.io/permintaanToko/">📱 Versi HP (Smartphone)</a></p>
-            <p><a href="https://polytasik-pixel.github.io/permintaanTokoo/">💻 Versi Laptop / PC</a></p>
+  <!-- Mobile App Frame Container -->
+  <div class="app-container" id="app-root">
+    
+    <!-- ==========================================
+         HALAMAN LOGIN (LOGIN SCREEN)
+         ========================================== -->
+    <div id="screen-login" class="screen active">
+      <div class="login-wrapper">
+        <div class="login-header">
+          <div class="login-logo">
+            <i data-lucide="user"></i>
+          </div>
+          <h2>TASIKMALAYA</h2>
+          <p>Masukkan Username / NIK dan Password Anda</p>
         </div>
-    </noscript>
+
+        <form id="form-login" onsubmit="return false;" class="login-form">
+          <div class="form-group">
+            <label for="login-username">Username / NIK Teknisi</label>
+            <div class="input-icon-wrapper">
+              <i data-lucide="user" class="input-icon"></i>
+              <input type="text" id="login-username" placeholder="Masukkan NIK..." required />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <div class="input-icon-wrapper">
+              <input type="password" id="login-password" placeholder="Password akun..." required style="padding-left:12px;" />
+              <button type="button" id="btn-login-psw-toggle" class="btn-clear" title="Lihat Password">
+                <i data-lucide="eye" id="login-psw-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="remember-row">
+            <label class="checkbox-container">
+              <input type="checkbox" id="remember-me" checked />
+              <span class="checkmark"></span>
+              <span>Simpan Username & Password</span>
+            </label>
+          </div>
+
+          <button type="button" id="btn-do-login" class="btn btn-primary btn-block btn-md">
+            <i data-lucide="log-in"></i>
+            <span>MASUK APLIKASI</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+
+    <!-- ==========================================
+         HALAMAN UTAMA APLIKASI (MAIN APP SCREEN)
+         ========================================== -->
+    <div id="screen-app" class="screen">
+      
+      <!-- Top Header -->
+      <header class="app-header">
+        <div class="header-info">
+          <div class="header-text">
+            <h1 id="header-nama">Teknisi (Belum Diset)</h1>
+            <span class="nik-badge" id="header-nik"><i data-lucide="id-card"></i> NIK: -</span>
+          </div>
+        </div>
+        <div class="header-right-actions">
+          <div class="header-psw-badge" id="header-psw-status">
+            <i data-lucide="shield-check"></i> <span id="header-psw-text">PSW: ON</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Sheet Live Data Status Bar (Direct Z2 Cell Content) -->
+      <div class="sheet-update-bar" id="sheet-update-bar">
+        <div class="sheet-update-left">
+          <strong id="sheet-z2-timestamp">Memuat...</strong>
+        </div>
+      </div>
+
+      <!-- App Main Body (Tabs Container) -->
+      <main class="app-body">
+
+        <!-- TAB 0: MENU UTAMA (HUB SELEKSI MODE APK SCAN / PORTAL TEKNISI) -->
+        <section id="tab-menu" class="tab-content active">
+          <div class="menu-hub-wrapper">
+            <div class="menu-hub-welcome">
+              <i data-lucide="sparkles"></i>
+              <h2>MENU UTAMA APLIKASI</h2>
+              <p>Pilih modul yang ingin Anda buka saat ini:</p>
+            </div>
+
+            <!-- MODE 1: TRANSFER STOK -->
+            <div class="mode-card mode-scan" id="btn-select-mode-scan" style="display: none;">
+              <div class="mode-card-icon">
+                <i data-lucide="qr-code"></i>
+              </div>
+              <div class="mode-card-content">
+                <h3>TRANSFER STOK</h3>
+                <p>Scanner barcode kamera, input no. gudang manual & lihat riwayat submit.</p>
+                <div class="mode-card-btn">
+                  <span>BUKA TRANSFER STOK</span>
+                  <i data-lucide="arrow-right"></i>
+                </div>
+              </div>
+            </div>
+
+            <!-- MODE 2: PORTAL TEKNISI -->
+            <div class="mode-card mode-teknisi" id="btn-select-mode-teknisi">
+              <div class="mode-card-icon">
+                <i data-lucide="user-check"></i>
+              </div>
+              <div class="mode-card-content">
+                <h3>PORTAL TEKNISI</h3>
+                <p>Cek Data Case Pending, Insentif, Evaluasi Rata-Rata & Selisih Unit serta Output Hari Ini.</p>
+                <div class="mode-card-btn">
+                  <span>BUKA PORTAL TEKNISI</span>
+                  <i data-lucide="arrow-right"></i>
+                </div>
+              </div>
+            </div>
+
+            <!-- MODE 3: PART PENGGANTI (PIPO) -->
+            <div class="mode-card mode-pipo" id="btn-select-mode-pipo">
+              <div class="mode-card-icon">
+                <i data-lucide="arrow-left-right"></i>
+              </div>
+              <div class="mode-card-content">
+                <h3>PART PENGGANTI</h3>
+                <p>Cek kecocokan dan cari part pengganti.</p>
+                <div class="mode-card-btn">
+                  <span>BUKA PART PENGGANTI</span>
+                  <i data-lucide="arrow-right"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- TAB 1: SCAN & DAFTAR PART -->
+        <section id="tab-scan" class="tab-content">
+          
+          <!-- Camera Scanner Card -->
+          <div class="card scanner-card">
+            <div class="card-header">
+              <div class="card-title">
+                <i data-lucide="qr-code"></i> Scanner Barcode Part
+              </div>
+              <div class="camera-actions">
+                <button id="btn-toggle-torch" class="btn-icon" title="Nyalakan/Matikan Lampu Flash" style="display: none;">
+                  <i data-lucide="zap"></i>
+                </button>
+                <button id="btn-toggle-camera" class="btn-icon" title="Nyalakan/Matikan Kamera">
+                  <i data-lucide="camera"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Direct Camera Stream Container -->
+            <div id="reader-container" class="reader-wrapper">
+              <div id="reader"></div>
+            </div>
+
+          </div>
+
+          <!-- Draft Review List Card (Daftar Part Ter-Scan) -->
+          <div class="card draft-card">
+            <div class="card-header">
+              <div class="card-title">
+                <i data-lucide="list-checks"></i> Daftar Part Ter-Scan
+                <span class="badge-count" id="draft-count">0 Item</span>
+              </div>
+            </div>
+
+            <!-- Quick Manual Add Input Line -->
+            <div class="manual-add-row">
+              <div class="input-icon-wrapper flex-1">
+                <i data-lucide="barcode" class="input-icon"></i>
+                <input type="text" id="input-no-gudang" placeholder="Ketik No. Gudang Manual..." autocomplete="off" />
+                <button id="btn-clear-gudang" class="btn-clear" title="Bersihkan">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+              <button id="btn-add-manual" class="btn btn-secondary btn-icon-plus" title="Tambah Manual">
+                <i data-lucide="plus"></i>
+              </button>
+            </div>
+
+            <!-- Draft Items List -->
+            <div id="draft-list-container" class="draft-container">
+              <div class="empty-state-sm">
+                <i data-lucide="package-open"></i>
+                <p>Belum ada item di daftar. Arahkan kamera ke barcode atau ketik manual di atas.</p>
+              </div>
+            </div>
+
+            <!-- Submit All Button (Triggers Popup Confirmation) -->
+            <button id="btn-submit" class="btn btn-primary btn-block btn-sm" disabled>
+              <i data-lucide="send" style="width:14px; height:14px;"></i>
+              <span id="btn-submit-text">SUBMIT (0 ITEM)</span>
+            </button>
+          </div>
+
+        </section>
+
+        <!-- TAB 2: PENDING CASES (GOOGLESHEET DATA COLS A1-JXXX) -->
+        <section id="tab-pending" class="tab-content">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <i data-lucide="clock"></i> Data Case Pending
+                <span class="badge-count" id="pending-tech-count">0 Case</span>
+              </div>
+            </div>
+
+            <!-- Search Filter Bar -->
+            <div class="manual-add-row mb-12">
+              <div class="input-icon-wrapper flex-1">
+                <i data-lucide="search" class="input-icon"></i>
+                <input type="text" id="input-search-pending" placeholder="Cari No SCL, Type, Seri, Status..." autocomplete="off" />
+                <button id="btn-clear-search-pending" class="btn-clear" title="Clear Search" style="display:none;">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+            </div>
+
+            <div id="pending-list-container" class="pending-container">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat data Pending...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: PERFORMA & INSENTIF (COLS K-V, W-Y, K12-L20) -->
+        <section id="tab-performa" class="tab-content">
+          <!-- Summary Performa Teknisi Card -->
+          <div class="card performa-main-card">
+            <div class="card-header">
+              <div class="card-title">
+                <i data-lucide="trending-up"></i> Ringkasan Performa & Insentif
+              </div>
+            </div>
+
+            <div id="performa-content-container" class="performa-container">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat data Performa & Insentif...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 4: NOTIFIKASI LONCENG (SHEET NOTIF COLS A1-JXXX) -->
+        <section id="tab-notif" class="tab-content">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <i data-lucide="bell"></i> Notifikasi & Informasi Part
+                <span class="badge-count" id="notif-tech-count">0 Notif</span>
+              </div>
+            </div>
+
+            <div id="notif-list-container" class="notif-container">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat Notifikasi...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 5: RIWAYAT / STATUS LOGS -->
+        <section id="tab-history" class="tab-content">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <i data-lucide="history"></i> Riwayat Submit Data
+              </div>
+              <button id="btn-clear-history" class="btn-icon text-danger" title="Hapus Riwayat">
+                <i data-lucide="trash-2"></i>
+              </button>
+            </div>
+            <div id="history-list" class="history-container">
+              <div class="empty-state-sm">
+                <i data-lucide="inbox"></i>
+                <p>Belum ada riwayat pengiriman.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 6: DEDICATED HALAMAN PROFIL -->
+        <section id="tab-profile" class="tab-content">
+          
+          <!-- Card Profil Header User -->
+          <div class="card profile-header-card">
+            <div class="profile-avatar-lg">
+              <i data-lucide="user-check"></i>
+            </div>
+            <div class="profile-details-text">
+              <h2 id="prof-disp-nama">Nama Teknisi</h2>
+              <span class="prof-badge-nik" id="prof-disp-nik">NIK: -</span>
+              <span class="prof-status-online"><i data-lucide="circle-dot"></i> Akun Teknisi Aktif</span>
+            </div>
+          </div>
+
+          <!-- Card Switcher Tema Tampilan -->
+          <div class="card theme-card">
+            <div class="card-title">
+              <i data-lucide="palette"></i> Pilihan Tema Tampilan
+            </div>
+            <div class="theme-options-grid">
+              <button type="button" class="btn-theme-opt active" id="btn-theme-dark" data-theme-val="dark">
+                <i data-lucide="moon"></i> Dark Slate (Default)
+              </button>
+              <button type="button" class="btn-theme-opt" id="btn-theme-light" data-theme-val="light">
+                <i data-lucide="sun"></i> Terang (Light)
+              </button>
+            </div>
+          </div>
+
+          <!-- Card Form Edit Profil -->
+          <div class="card card-profile-form">
+            <div class="card-title">
+              <i data-lucide="user-cog"></i> Pengaturan Akun Teknisi
+            </div>
+
+            <form id="form-profile" onsubmit="return false;">
+              <div class="form-group">
+                <label for="profile-nama">Nama Teknisi</label>
+                <div class="input-icon-wrapper">
+                  <i data-lucide="user" class="input-icon"></i>
+                  <input type="text" id="profile-nama" placeholder="Masukkan nama..." required />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="profile-nik">NIK (Nomor Induk Karyawan)</label>
+                <div class="input-icon-wrapper">
+                  <i data-lucide="id-card" class="input-icon"></i>
+                  <input type="text" id="profile-nik" placeholder="Masukkan NIK..." required />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="profile-psw">Password Akses Web Target</label>
+                <div class="input-icon-wrapper">
+                  <input type="password" id="profile-psw" placeholder="Password akun web..." style="padding-left:12px;" />
+                  <button type="button" id="btn-toggle-psw-visibility" class="btn-clear" title="Lihat Password">
+                    <i data-lucide="eye" id="psw-eye-icon"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Switch Status PSW -->
+              <div class="switch-card">
+                <div class="switch-info">
+                  <div class="switch-label">
+                    <i data-lucide="shield-check"></i> STATUS PSW
+                  </div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="profile-psw-toggle" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              <button type="button" id="btn-save-profile" class="btn btn-primary btn-block btn-sm">
+                <i data-lucide="save"></i> Simpan Profil & Pengaturan
+              </button>
+            </form>
+          </div>
+
+          <!-- Tombol Logout -->
+          <div class="logout-wrapper">
+            <button type="button" id="btn-logout" class="btn btn-ghost btn-block btn-sm text-danger">
+              <i data-lucide="log-out"></i> KELUAR AKUN (LOGOUT)
+            </button>
+          </div>
+
+        </section>
+
+        <!-- TAB 8: PART PENGGANTI (PIPO SHEET DATA) -->
+        <section id="tab-pipo" class="tab-content">
+          <div class="card card-pipo-wrapper">
+            <!-- FIXED TOP HEADER SECTION -->
+            <div class="pipo-top-fixed">
+              <div class="card-header flex-between">
+                <div class="card-title">
+                  <i data-lucide="arrow-left-right"></i> Part Pengganti (PIPO)
+                  <span class="badge-count" id="pipo-count">0 Data</span>
+                </div>
+              </div>
+
+              <div class="card-desc mb-2">
+                Ketik No Gudang / Part Number untuk mencari part pengganti.
+              </div>
+
+              <!-- Search Bar for PIPO Part Number -->
+              <div class="search-box-wrapper mb-2">
+                <div class="input-icon-wrapper">
+                  <i data-lucide="search" class="input-icon"></i>
+                  <input type="text" id="input-search-pipo" placeholder="Cari No Gudang / Part / Type... (cth: IB-559155)" />
+                  <button type="button" id="btn-clear-search-pipo" class="btn-clear" style="display:none;" title="Bersihkan">
+                    <i data-lucide="x"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- FIXED COLUMN HEADER FOR DEFAULT CATALOG -->
+              <div id="pipo-default-header" class="pipo-simple-header mb-2">
+                <div class="pipo-col-left">PLUG OFF</div>
+                <div class="pipo-col-mid"><i data-lucide="arrow-left-right" style="width:12px;height:12px;color:var(--warning);"></i></div>
+                <div class="pipo-col-right" style="text-align:right;">PLUG IN</div>
+              </div>
+            </div>
+
+            <!-- SCROLLABLE LIST CONTAINER -->
+            <div id="pipo-list-container" class="pipo-list-container">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat data Part Pengganti (PIPO)...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 7: KELOLA USER (KHUSUS ADMIN) -->
+        <section id="tab-users" class="tab-content">
+          <!-- PENGATURAN MODUL & MENU APLIKASI (ADMIN) -->
+          <div class="card card-admin-settings mb-4">
+            <div class="card-header flex-between">
+              <div class="card-title">
+                <i data-lucide="sliders"></i> Pengaturan Modul & Menu Aplikasi
+              </div>
+            </div>
+            <div class="card-body" style="padding: 12px 14px;">
+              <div class="switch-card" style="margin-bottom: 0;">
+                <div class="switch-info">
+                  <div class="switch-label">
+                    <i data-lucide="qr-code"></i> TAMPILKAN MENU TRANSFER STOK
+                  </div>
+                  <div class="switch-subtext">Sembunyikan / tampilkan menu Transfer Stok di semua perangkat teknisi (Realtime: True / False)</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="admin-transfer-stok-toggle" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <i data-lucide="users"></i> Kelola User / Teknisi
+                <span class="badge-count" id="admin-user-count">0 User</span>
+              </div>
+              <button id="btn-open-add-user" class="btn btn-primary btn-xs">
+                <i data-lucide="user-plus"></i> Tambah User
+              </button>
+            </div>
+            
+            <div id="admin-users-list" class="user-list-container">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat daftar user dari Supabase...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <!-- Bottom Navigation Bar (Hidden on Main Menu Hub) -->
+      <nav class="app-nav hidden" id="app-nav">
+        <button class="nav-item active" data-target="tab-menu" data-mode="all" title="Kembali ke Menu Utama">
+          <i data-lucide="layout-grid"></i>
+          <span>Menu</span>
+        </button>
+        <button class="nav-item" data-target="tab-scan" data-mode="scan" style="display: none;">
+          <i data-lucide="qr-code"></i>
+          <span>Scan</span>
+        </button>
+        <button class="nav-item" data-target="tab-history" data-mode="scan" style="display: none;">
+          <i data-lucide="history"></i>
+          <span>Riwayat</span>
+        </button>
+
+        <button class="nav-item" data-target="tab-pending" data-mode="teknisi">
+          <i data-lucide="clock"></i>
+          <span>Pending</span>
+          <span class="nav-badge hidden" id="nav-pending-badge">0</span>
+        </button>
+        <button class="nav-item" data-target="tab-performa" data-mode="teknisi">
+          <i data-lucide="trending-up"></i>
+          <span>Performa</span>
+        </button>
+
+        <button class="nav-item" data-target="tab-pipo" data-mode="pipo">
+          <i data-lucide="arrow-left-right"></i>
+          <span>Pengganti</span>
+        </button>
+
+        <button class="nav-item" data-target="tab-profile" data-mode="all">
+          <i data-lucide="user-cog"></i>
+          <span>Profil</span>
+        </button>
+        <button class="nav-item admin-only hidden" id="nav-item-users" data-target="tab-users" data-mode="all">
+          <i data-lucide="users"></i>
+          <span>User</span>
+        </button>
+      </nav>
+
+    </div>
+
+    <!-- ==========================================
+         CENTERED POPUP CONFIRMATION MODAL (YA / TIDAK)
+         ========================================== -->
+    <div id="modal-confirm" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title" id="modal-confirm-title">
+            <i data-lucide="help-circle"></i> Konfirmasi Kirim Data
+          </div>
+        </div>
+        <div class="modal-body text-center">
+          <p id="modal-confirm-msg" class="modal-msg-center">Apakah Anda Yakin Melakukan Request?</p>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-confirm-cancel" class="btn btn-ghost btn-sm">Batal</button>
+          <button id="btn-confirm-ok" class="btn btn-primary btn-sm">
+            <i data-lucide="check"></i> <span id="modal-confirm-ok-text">Ya, Kirim Data</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         BLOCKING QUEUE MODAL (NO OK / NO X / NO CLOSE BUTTON)
+         ========================================== -->
+    <div id="modal-queue" class="modal-overlay modal-queue-overlay">
+      <div class="modal-card modal-queue-card">
+        <div class="modal-header justify-center">
+          <div class="modal-title text-warning">
+            <i data-lucide="clock"></i> Menunggu Antrian Transfer
+          </div>
+        </div>
+        <div class="modal-body text-center align-center">
+          <div class="queue-spinner">
+            <i data-lucide="loader-2" class="spin-lg"></i>
+          </div>
+          <p id="modal-queue-msg" class="queue-msg">
+            TERDAPAT TRANSAKSI YANG SEDANG DI PROSES. MOHON MENUNGGU...
+          </p>
+          <div class="queue-subtext" id="modal-queue-subtext">
+            <span>Status: <strong id="queue-status-text">MENGANTRI / DIPROSES...</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         MODAL USER FORM (TAMBAH / EDIT USER ADMIN)
+         ========================================== -->
+    <div id="modal-user-form" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title" id="modal-user-form-title">
+            <i data-lucide="user-plus"></i> Tambah User Baru
+          </div>
+        </div>
+        <div class="modal-body">
+          <form id="form-admin-user" onsubmit="return false;">
+            <input type="hidden" id="user-form-id" value="" />
+            
+            <div class="form-group">
+              <label for="user-form-nik">NIK Teknisi (Username)</label>
+              <div class="input-icon-wrapper">
+                <i data-lucide="id-card" class="input-icon"></i>
+                <input type="text" id="user-form-nik" placeholder="Masukkan NIK..." required />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="user-form-nama">Nama Lengkap Teknisi</label>
+              <div class="input-icon-wrapper">
+                <i data-lucide="user" class="input-icon"></i>
+                <input type="text" id="user-form-nama" placeholder="Contoh: Budi Santoso" required />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="user-form-psw">Password Akses Web Target</label>
+              <div class="input-icon-wrapper">
+                <input type="text" id="user-form-psw" placeholder="Password akun..." required style="padding-left:12px;" />
+              </div>
+            </div>
+
+            <div class="switch-card">
+              <div class="switch-info">
+                <div class="switch-label">
+                  <i data-lucide="shield-check"></i> STATUS PASSWORD (PSW)
+                </div>
+                <div class="switch-subtext">Tempel password saat konfirmasi transfer</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="user-form-psw-toggle" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-user-form" class="btn btn-ghost btn-sm">Batal</button>
+          <button type="button" id="btn-save-user-form" class="btn btn-primary btn-sm">
+            <i data-lucide="save"></i> <span id="user-form-submit-text">Simpan User</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-wrapper"></div>
+
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
