@@ -117,17 +117,18 @@ body {
   transition: background-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-/* Tampilan PC / Desktop / Tablet (Layar Setengah di Tengah, Jarak 2mm Atas-Bawah dari Layar, Sudut 90-Derajat Soft 4px) */
+/* Tampilan PC / Desktop / Tablet (Full Screen Layar Penuh dengan Tata Letak Responsif) */
 @media (min-width: 481px) {
   .app-container {
-    max-width: 480px;
-    height: calc(100vh - 4mm);
-    height: calc(100dvh - 4mm);
+    max-width: 100%;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
     max-height: none;
-    border-radius: 4px;
-    border: 1px solid var(--border-dark);
-    box-shadow: 0 0 32px rgba(0, 0, 0, 0.5);
-    margin: 2mm auto;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    margin: 0;
   }
 }
 
@@ -163,6 +164,8 @@ html[data-active-tab="tab-part-kembali"] #tab-part-kembali,
 html[data-active-tab="tab-tagihan"] #tab-tagihan,
 html[data-active-tab="tab-profile"] #tab-profile {
   display: flex !important;
+  height: 100% !important;
+  min-height: 0 !important;
 }
 
 html[data-active-tab]:not([data-active-tab="tab-menu"]) #tab-menu {
@@ -234,6 +237,16 @@ html[data-active-tab="tab-finish-all"] .nav-item[data-mode="finish"] {
   display: flex !important;
 }
 
+/* Mode PIPO Nav Items */
+html[data-active-tab="tab-pipo"] .nav-item[data-mode="pipo"] {
+  display: flex !important;
+}
+
+/* All Mode Nav Items (Menu & Profile) */
+html[data-active-tab]:not([data-active-tab="tab-menu"]) .nav-item[data-mode="all"] {
+  display: flex !important;
+}
+
 /* Hide unselected nav items per mode before JS runs */
 html[data-active-tab="tab-pending"] .nav-item:not([data-mode="teknisi"]):not([data-mode="all"]),
 html[data-active-tab="tab-performa"] .nav-item:not([data-mode="teknisi"]):not([data-mode="all"]),
@@ -243,8 +256,53 @@ html[data-active-tab="tab-tagihan"] .nav-item:not([data-mode="teknisi"]):not([da
 html[data-active-tab="tab-finish"] .nav-item:not([data-mode="finish"]):not([data-mode="all"]),
 html[data-active-tab="tab-finish-all"] .nav-item:not([data-mode="finish"]):not([data-mode="all"]),
 html[data-active-tab="tab-scan"] .nav-item:not([data-mode="scan"]):not([data-mode="all"]),
-html[data-active-tab="tab-history"] .nav-item:not([data-mode="scan"]):not([data-mode="all"]) {
+html[data-active-tab="tab-history"] .nav-item:not([data-mode="scan"]):not([data-mode="all"]),
+html[data-active-tab="tab-pipo"] .nav-item:not([data-mode="pipo"]):not([data-mode="all"]),
+html[data-active-tab="tab-profile"] .nav-item:not([data-mode="all"]) {
   display: none !important;
+}
+
+/* Instant Zero-Flicker Active Tab Highlight Driven by HTML data-active-tab */
+html[data-active-tab="tab-menu"] .nav-item[data-target="tab-menu"],
+html[data-active-tab="tab-scan"] .nav-item[data-target="tab-scan"],
+html[data-active-tab="tab-history"] .nav-item[data-target="tab-history"],
+html[data-active-tab="tab-pending"] .nav-item[data-target="tab-pending"],
+html[data-active-tab="tab-performa"] .nav-item[data-target="tab-performa"],
+html[data-active-tab="tab-notif"] .nav-item[data-target="tab-notif"],
+html[data-active-tab="tab-part-kembali"] .nav-item[data-target="tab-part-kembali"],
+html[data-active-tab="tab-tagihan"] .nav-item[data-target="tab-tagihan"],
+html[data-active-tab="tab-finish"] .nav-item[data-target="tab-finish"],
+html[data-active-tab="tab-finish-all"] .nav-item[data-target="tab-finish-all"],
+html[data-active-tab="tab-pipo"] .nav-item[data-target="tab-pipo"],
+html[data-active-tab="tab-profile"] .nav-item[data-target="tab-profile"] {
+  color: var(--primary) !important;
+}
+
+html[data-active-tab="tab-menu"] .nav-item[data-target="tab-menu"] i,
+html[data-active-tab="tab-menu"] .nav-item[data-target="tab-menu"] svg,
+html[data-active-tab="tab-scan"] .nav-item[data-target="tab-scan"] i,
+html[data-active-tab="tab-scan"] .nav-item[data-target="tab-scan"] svg,
+html[data-active-tab="tab-history"] .nav-item[data-target="tab-history"] i,
+html[data-active-tab="tab-history"] .nav-item[data-target="tab-history"] svg,
+html[data-active-tab="tab-pending"] .nav-item[data-target="tab-pending"] i,
+html[data-active-tab="tab-pending"] .nav-item[data-target="tab-pending"] svg,
+html[data-active-tab="tab-performa"] .nav-item[data-target="tab-performa"] i,
+html[data-active-tab="tab-performa"] .nav-item[data-target="tab-performa"] svg,
+html[data-active-tab="tab-notif"] .nav-item[data-target="tab-notif"] i,
+html[data-active-tab="tab-notif"] .nav-item[data-target="tab-notif"] svg,
+html[data-active-tab="tab-part-kembali"] .nav-item[data-target="tab-part-kembali"] i,
+html[data-active-tab="tab-part-kembali"] .nav-item[data-target="tab-part-kembali"] svg,
+html[data-active-tab="tab-tagihan"] .nav-item[data-target="tab-tagihan"] i,
+html[data-active-tab="tab-tagihan"] .nav-item[data-target="tab-tagihan"] svg,
+html[data-active-tab="tab-finish"] .nav-item[data-target="tab-finish"] i,
+html[data-active-tab="tab-finish"] .nav-item[data-target="tab-finish"] svg,
+html[data-active-tab="tab-finish-all"] .nav-item[data-target="tab-finish-all"] i,
+html[data-active-tab="tab-finish-all"] .nav-item[data-target="tab-finish-all"] svg,
+html[data-active-tab="tab-pipo"] .nav-item[data-target="tab-pipo"] i,
+html[data-active-tab="tab-pipo"] .nav-item[data-target="tab-pipo"] svg,
+html[data-active-tab="tab-profile"] .nav-item[data-target="tab-profile"] i,
+html[data-active-tab="tab-profile"] .nav-item[data-target="tab-profile"] svg {
+  color: var(--primary) !important;
 }
 
 /* ==========================================
@@ -380,9 +438,12 @@ html[data-active-tab="tab-history"] .nav-item:not([data-mode="scan"]):not([data-
   line-height: 1.2;
 }
 
-.nik-badge i {
-  width: 12px;
-  height: 12px;
+.nik-badge i, .nik-badge svg, #header-nik i, #header-nik svg {
+  width: 13px !important;
+  height: 13px !important;
+  min-width: 13px !important;
+  min-height: 13px !important;
+  flex-shrink: 0 !important;
 }
 
 .header-psw-badge {
@@ -626,6 +687,23 @@ html[data-active-tab="tab-history"] .nav-item:not([data-mode="scan"]):not([data-
 /* ==========================================
    DEDICATED PROFILE SCREEN (SCROLLABLE ON PC & MOBILE)
    ========================================== */
+.profile-grid-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.profile-sidebar, .profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.desktop-only { display: none !important; }
+.mobile-only { display: block !important; }
+
 #tab-profile.tab-content {
   width: 100%;
   box-sizing: border-box;
@@ -1458,19 +1536,35 @@ input:checked + .slider:before { transform: translateX(20px); }
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   font-size: 10px;
   font-weight: 600;
   cursor: pointer;
-  width: 33%;
+  flex: 1 1 0px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  padding: 4px 0 !important;
+  box-sizing: border-box !important;
+  position: relative;
 }
 
-.nav-item i {
-  width: 17px;
-  height: 17px;
+.nav-item i, .nav-item svg {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px !important;
+  min-height: 17px !important;
+  max-width: 17px !important;
+  max-height: 17px !important;
+  flex-shrink: 0 !important;
+  display: block !important;
 }
 
 .nav-item.active {
+  color: var(--primary);
+}
+
+.nav-item.active i, .nav-item.active svg {
   color: var(--primary);
 }
 
@@ -1687,6 +1781,33 @@ input:checked + .slider:before { transform: translateX(20px); }
   box-shadow: 0 0 4px rgba(239, 68, 68, 0.8);
   border: 1px solid #ffffff;
   animation: pulse-ring 2s infinite;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 1px;
+  left: calc(50% + 3px);
+  background-color: var(--danger);
+  color: white;
+  font-size: 8.5px;
+  font-weight: 800;
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.8);
+  border: 1px solid #ffffff;
+  z-index: 2;
+  box-sizing: border-box !important;
+  aspect-ratio: 1 / 1 !important;
+  line-height: 1 !important;
 }
 
 .bell-badge.hidden, .nav-badge.hidden {
@@ -2928,6 +3049,235 @@ input:checked + .slider:before { transform: translateX(20px); }
   line-height: 1;
   width: 100%;
   margin: 0;
+}
+
+/* ==========================================
+   OPTIMASI TAMPILAN PC & DESKTOP (FULL SCREEN RESPONSIVE LAYOUT)
+   ========================================== */
+@media (min-width: 768px) {
+  /* Header & Navigation Padding & Sizes (4cm padding kanan-kiri khusus PC) */
+  .app-header {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 4cm !important;
+    padding-right: 4cm !important;
+  }
+
+  .header-text h1 {
+    font-size: 13.5px;
+  }
+
+  .nik-badge {
+    font-size: 13.5px;
+  }
+
+  .header-psw-badge {
+    font-size: 12.5px;
+    padding: 5px 12px;
+  }
+
+  .sheet-update-bar {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 4cm !important;
+    padding-right: 4cm !important;
+    font-size: 12.5px;
+  }
+
+  .app-body {
+    padding-top: 14px;
+    padding-bottom: 14px;
+    padding-left: 4cm !important;
+    padding-right: 4cm !important;
+    gap: 14px;
+    max-width: 100% !important;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .app-nav {
+    height: 58px;
+    padding-left: 4cm !important;
+    padding-right: 4cm !important;
+    max-width: 100% !important;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .nav-item {
+    font-size: 11.5px;
+  }
+
+  .nav-item i, .nav-item svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .nav-badge {
+    top: 0px;
+    left: calc(50% + 4px);
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    min-height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+    font-size: 9.5px !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+  }
+
+  /* 1. Main Menu Hub Grid */
+  .menu-hub-wrapper {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    align-items: stretch;
+    padding: 10px 0;
+  }
+
+  .menu-hub-welcome {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    text-align: left;
+    align-items: center;
+    padding: 16px 20px;
+    gap: 16px;
+  }
+
+  .menu-hub-welcome i, .menu-hub-welcome svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  .menu-hub-welcome h2 {
+    font-size: 16px;
+  }
+
+  /* 2. Transfer Stok / Scanner Side-by-Side (Clean & Equal Height Grid) */
+  #tab-scan.tab-content.active,
+  html[data-active-tab="tab-scan"] #tab-scan {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 16px !important;
+    align-items: stretch !important;
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  #tab-scan .scanner-card,
+  #tab-scan .draft-card {
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    min-height: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  #tab-scan .draft-container {
+    flex: 1 !important;
+    min-height: 200px !important;
+    overflow-y: auto !important;
+  }
+
+  /* 3. Pending Cases Grid - 2 Kolom Kanan Kiri khusus PC */
+  .pending-container,
+  .pending-list-container {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .pending-card {
+    margin-bottom: 0;
+  }
+
+  /* 4. Form Input Finish Harian - Grid 2 Kolom Kanan Kiri khusus PC */
+  .form-grid-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  /* 5. Performa / Insentif Side-by-Side & Auto-Size Stat Grid */
+  #tab-performa.tab-content.active {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .performa-stat-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  .performa-stat-box {
+    min-height: 58px !important;
+    padding: 10px 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 6. Notifikasi Grid */
+  .notif-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  /* 7. Part Belum Kembali & Tagihan Grids */
+  .part-kembali-list-container,
+  .tagihan-list-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  /* 8. Part Pengganti (PIPO) Grid */
+  .pipo-list-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  #tab-pipo.tab-content.active {
+    height: calc(100vh - 125px);
+    height: calc(100dvh - 125px);
+  }
+
+  /* 9. Finish All Data Grid */
+  .finish-all-list-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .desktop-only { display: block !important; }
+  .mobile-only { display: none !important; }
+
+  /* 10. Dedicated Profile Grid */
+  #tab-profile.tab-content.active {
+    display: block;
+  }
+
+  .profile-grid-container {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 18px;
+    align-items: start;
+    max-width: 980px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* 11. Modals */
+  .modal-card {
+    max-width: 520px;
+  }
 }
 
 

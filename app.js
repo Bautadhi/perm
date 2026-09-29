@@ -3987,11 +3987,18 @@ function renderPendingTab() {
             <span>No Seri</span>
             <strong>${item.seri || '-'}</strong>
           </div>
+          <div class="pending-info-item">
+            <span>Status Case</span>
+            <strong>${item.status || 'PENDING'}</strong>
+          </div>
+          <div class="pending-info-item">
+            <span>Usia Case</span>
+            <strong style="color:var(--warning);">${item.usia ? item.usia + ' Hari' : '-'}</strong>
+          </div>
         </div>
         ${item.ket_part ? `<div style="margin-top:4px;font-size:10px;"><span class="pending-part-desc">${item.ket_part}</span></div>` : ''}
         <div class="pending-card-footer">
           <span class="pending-status-badge ${statusClass}">${item.status || 'PENDING'}</span>
-          <span class="pending-age-badge">Usia: ${item.usia ? item.usia + ' Hari' : '-'}</span>
         </div>
       </div>`;
   }).join('');
