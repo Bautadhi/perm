@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.transaksi_part (
 
 -- Ekstensi kolom jika tabel sudah ada sebelumnya
 ALTER TABLE public.transaksi_part ADD COLUMN IF NOT EXISTS unit_id TEXT;
+ALTER TABLE public.transaksi_part ADD COLUMN IF NOT EXISTS process_mode TEXT DEFAULT 'STAFPART';
 
 -- 3. TABEL PENGATURAN APLIKASI (Realtime App Settings: Show/Hide Transfer Stok)
 CREATE TABLE IF NOT EXISTS public.app_settings (

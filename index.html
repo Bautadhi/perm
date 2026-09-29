@@ -22,7 +22,51 @@
   <!-- App Favicon (Part Box & Laser Scanner Icon) -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=7.0" />
+  <script>
+    window.__INIT_NAMA__ = '';
+    window.__INIT_NIK__ = '';
+    window.__INIT_USE_PSW__ = true;
+    window.__INIT_SHEET_TS__ = '';
+    try {
+      var sess = localStorage.getItem('teknisi_current_session');
+      var prof = localStorage.getItem('teknisi_profile_data');
+      var sheetsCache = localStorage.getItem('google_sheets_cache');
+      if (sheetsCache) {
+        var sc = JSON.parse(sheetsCache);
+        if (sc) {
+          window.__INIT_SHEET_TS__ = sc.pendingTimestamp || sc.lastUpdateTimestamp || sc.performaTimestamp || '';
+        }
+      }
+      if (sess) {
+        var p = JSON.parse(sess);
+        if (p && p.isLoggedIn) {
+          document.documentElement.classList.add('is-logged-in');
+          var hashTab = window.location.hash ? window.location.hash.replace('#', '') : '';
+          var savedTab = localStorage.getItem('teknisi_last_active_tab');
+          var validTabs = ['tab-menu', 'tab-scan', 'tab-history', 'tab-pending', 'tab-performa', 'tab-notif', 'tab-part-kembali', 'tab-tagihan', 'tab-pipo', 'tab-finish', 'tab-finish-all', 'tab-profile'];
+          var activeTab = (hashTab && validTabs.indexOf(hashTab) !== -1) ? hashTab : ((savedTab && validTabs.indexOf(savedTab) !== -1) ? savedTab : 'tab-menu');
+          document.documentElement.setAttribute('data-active-tab', activeTab);
+
+          if (p.nik && p.nik.toUpperCase() === 'ADMIN') {
+            window.__INIT_NAMA__ = 'Administrator';
+            window.__INIT_NIK__ = 'ADMIN';
+          } else {
+            if (prof) {
+              var pr = JSON.parse(prof);
+              if (pr) {
+                window.__INIT_NAMA__ = pr.nama || '';
+                window.__INIT_NIK__ = pr.nik || '';
+                if (typeof pr.usePsw === 'boolean') window.__INIT_USE_PSW__ = pr.usePsw;
+              }
+            }
+            if (!window.__INIT_NIK__ && p.nik) window.__INIT_NIK__ = p.nik;
+            if (!window.__INIT_NAMA__ && p.nama) window.__INIT_NAMA__ = p.nama;
+          }
+        }
+      }
+    } catch(e) {}
+  </script>
 </head>
 <body>
   <!-- Mobile App Frame Container -->
@@ -33,46 +77,48 @@
          ========================================== -->
     <div id="screen-login" class="screen active">
       <div class="login-wrapper">
-        <div class="login-header">
-          <div class="login-logo">
-            <i data-lucide="user"></i>
+        <div class="login-card">
+          <div class="login-header">
+            <div class="login-logo">
+              <i data-lucide="user"></i>
+            </div>
+            <h2>TASIKMALAYA</h2>
+            <p>Masukkan Username / NIK dan Password Anda</p>
           </div>
-          <h2>TASIKMALAYA</h2>
-          <p>Masukkan Username / NIK dan Password Anda</p>
+
+          <form id="form-login" onsubmit="return false;" class="login-form">
+            <div class="form-group">
+              <label for="login-username">Username / NIK Teknisi</label>
+              <div class="input-icon-wrapper">
+                <i data-lucide="user" class="input-icon"></i>
+                <input type="text" id="login-username" placeholder="Masukkan NIK..." required />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="login-password">Password</label>
+              <div class="input-icon-wrapper">
+                <input type="password" id="login-password" placeholder="Password akun..." required style="padding-left:12px;" />
+                <button type="button" id="btn-login-psw-toggle" class="btn-clear" title="Lihat Password">
+                  <i data-lucide="eye" id="login-psw-eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="remember-row">
+              <label class="checkbox-container">
+                <input type="checkbox" id="remember-me" checked />
+                <span class="checkmark"></span>
+                <span>Simpan Username & Password</span>
+              </label>
+            </div>
+
+            <button type="button" id="btn-do-login" class="btn btn-primary btn-block btn-md">
+              <i data-lucide="log-in"></i>
+              <span>MASUK APLIKASI</span>
+            </button>
+          </form>
         </div>
-
-        <form id="form-login" onsubmit="return false;" class="login-form">
-          <div class="form-group">
-            <label for="login-username">Username / NIK Teknisi</label>
-            <div class="input-icon-wrapper">
-              <i data-lucide="user" class="input-icon"></i>
-              <input type="text" id="login-username" placeholder="Masukkan NIK..." required />
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label for="login-password">Password</label>
-            <div class="input-icon-wrapper">
-              <input type="password" id="login-password" placeholder="Password akun..." required style="padding-left:12px;" />
-              <button type="button" id="btn-login-psw-toggle" class="btn-clear" title="Lihat Password">
-                <i data-lucide="eye" id="login-psw-eye"></i>
-              </button>
-            </div>
-          </div>
-
-          <div class="remember-row">
-            <label class="checkbox-container">
-              <input type="checkbox" id="remember-me" checked />
-              <span class="checkmark"></span>
-              <span>Simpan Username & Password</span>
-            </label>
-          </div>
-
-          <button type="button" id="btn-do-login" class="btn btn-primary btn-block btn-md">
-            <i data-lucide="log-in"></i>
-            <span>MASUK APLIKASI</span>
-          </button>
-        </form>
       </div>
     </div>
 
@@ -86,16 +132,16 @@
       <header class="app-header">
         <div class="header-info">
           <div class="header-text">
-            <h1 id="header-nama">Teknisi (Belum Diset)</h1>
-            <span class="nik-badge" id="header-nik"><i data-lucide="id-card"></i> NIK: -</span>
+            <h1 id="header-nama"><script>document.write(window.__INIT_NAMA__ || 'Teknisi (Belum Diset)');</script></h1>
+            <span class="nik-badge" id="header-nik"><i data-lucide="id-card"></i> <script>document.write(window.__INIT_NIK__ ? 'NIK: ' + window.__INIT_NIK__ : 'NIK: -');</script></span>
           </div>
         </div>
         <div class="header-right-actions">
-          <div class="header-psw-badge" id="header-psw-status">
-            <i data-lucide="shield-check"></i> <span id="header-psw-text">PSW: ON</span>
+          <div class="header-psw-badge <script>if(window.__INIT_USE_PSW__===false)document.write('off');</script>" id="header-psw-status">
+            <i data-lucide="shield-check"></i> <span id="header-psw-text"><script>document.write(window.__INIT_USE_PSW__ === false ? 'PSW: OFF' : 'PSW: ON');</script></span>
           </div>
-          <button type="button" id="header-btn-missing" class="btn btn-primary btn-xs hidden" style="font-weight:700; gap:4px; padding:6px 10px; border-radius:6px;" title="Cek tanggal laporan yang belum diisi">
-            <i data-lucide="calendar"></i> LIHAT DATA
+          <button type="button" id="header-btn-missing" class="header-psw-badge" style="background:var(--primary); border:1px solid rgba(255,255,255,0.4);" title="Cek tanggal laporan yang belum diisi">
+            <i data-lucide="calendar"></i> <span>Cek Tanggal Belum Isi</span>
           </button>
         </div>
       </header>
@@ -103,7 +149,7 @@
       <!-- Sheet Live Data Status Bar (Direct Z2 Cell Content) -->
       <div class="sheet-update-bar" id="sheet-update-bar">
         <div class="sheet-update-left">
-          <strong id="sheet-z2-timestamp">Memuat...</strong>
+          <strong id="sheet-z2-timestamp"><script>document.write(window.__INIT_SHEET_TS__ || 'Memuat data....');</script></strong>
         </div>
       </div>
 
@@ -111,7 +157,7 @@
       <main class="app-body">
 
         <!-- TAB 0: MENU UTAMA (HUB SELEKSI MODE APK SCAN / PORTAL TEKNISI) -->
-        <section id="tab-menu" class="tab-content active">
+        <section id="tab-menu" class="tab-content">
           <div class="menu-hub-wrapper">
             <div class="menu-hub-welcome">
               <i data-lucide="sparkles"></i>
@@ -315,6 +361,90 @@
           </div>
         </section>
 
+        <!-- TAB: PART BELUM KEMBALI -->
+        <section id="tab-part-kembali" class="tab-content">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title" style="color: var(--primary);">
+                <i data-lucide="package"></i> Part Bekas
+                <span class="badge-count" id="part-kembali-count">0 Item</span>
+              </div>
+            </div>
+
+            <!-- Top Summary Box for Total QTY Part -->
+            <div class="part-kembali-summary-box mb-3" style="background: var(--bg-card); border-left: 4px solid var(--primary); padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); border-left: 4px solid var(--primary); display: flex; align-items: center; justify-content: space-between; gap: 12px; box-shadow: var(--shadow-main);">
+              <div>
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">TOTAL QTY PART BEKAS</div>
+                <div style="font-size: 22px; font-weight: 800; color: var(--primary); margin-top: 2px;" id="part-kembali-total-qty">0 Pcs</div>
+              </div>
+              <div style="width: 44px; height: 44px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; color: var(--primary); flex-shrink: 0;">
+                <i data-lucide="package-check" style="width: 24px; height: 24px;"></i>
+              </div>
+            </div>
+
+            <!-- Quick Search Input Line -->
+            <div class="manual-add-row mb-3">
+              <div class="input-icon-wrapper flex-1">
+                <i data-lucide="search" class="input-icon"></i>
+                <input type="text" id="input-search-part-kembali" placeholder="Cari No. Gudang / Kode Part / No. Reservasi..." autocomplete="off" />
+                <button id="btn-clear-search-part-kembali" class="btn-clear" title="Clear Search" style="display:none;">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Part List Container -->
+            <div id="part-kembali-list-container" class="part-kembali-container" style="display: flex; flex-direction: column; gap: 6px;">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat data Part Belum Kembali...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: TAGIHAN TEKNISI -->
+        <section id="tab-tagihan" class="tab-content">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title" style="color: var(--warning);">
+                <i data-lucide="banknote"></i> Tagihan Teknisi
+                <span class="badge-count" id="tagihan-count">0 Invoice</span>
+              </div>
+            </div>
+
+            <!-- Top Summary Box for Total Tagihan Rupiah -->
+            <div class="tagihan-summary-box mb-3" style="background: var(--bg-card); border-left: 4px solid var(--warning); padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); border-left: 4px solid var(--warning); display: flex; align-items: center; justify-content: space-between; gap: 12px; box-shadow: var(--shadow-main);">
+              <div>
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">TOTAL TAGIHAN TEKNISI</div>
+                <div style="font-size: 22px; font-weight: 800; color: var(--warning); margin-top: 2px;" id="tagihan-total-jumlah">Rp 0</div>
+              </div>
+              <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); display: flex; align-items: center; justify-content: center; color: var(--warning); flex-shrink: 0;">
+                <i data-lucide="wallet" style="width: 24px; height: 24px;"></i>
+              </div>
+            </div>
+
+            <!-- Quick Search Input Line -->
+            <div class="manual-add-row mb-3">
+              <div class="input-icon-wrapper flex-1">
+                <i data-lucide="search" class="input-icon"></i>
+                <input type="text" id="input-search-tagihan" placeholder="Cari No. Invoice / Nama Konsumen..." autocomplete="off" />
+                <button id="btn-clear-search-tagihan" class="btn-clear" title="Clear Search" style="display:none;">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Tagihan List Container -->
+            <div id="tagihan-list-container" class="tagihan-container" style="display: flex; flex-direction: column; gap: 8px;">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat data Tagihan Teknisi...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- TAB 5: RIWAYAT / STATUS LOGS -->
         <section id="tab-history" class="tab-content">
           <div class="card">
@@ -336,115 +466,163 @@
         </section>
 
         <!-- TAB: INPUT FINISH HARIAN TEKNISI (GOOGLE FORM REPLACEMENT) -->
+        <!-- TAB 5: FORM INPUT FINISH HARIAN & SEMUA DATA FINISH -->
         <section id="tab-finish" class="tab-content">
-          <div class="card card-finish-wrapper">
-            <div class="card-header">
-              <div class="card-title">
-                <i data-lucide="clipboard-check"></i> Form Input Finish Harian Teknisi
+          
+          <!-- SUB-PAGE 1: FORM INPUT FINISH HARIAN -->
+          <div id="finish-page-form" class="finish-page-content active">
+            <div class="card card-finish-wrapper">
+              <div class="card-header">
+                <div class="card-title">
+                  <i data-lucide="clipboard-check"></i> Form Input Finish Harian Teknisi
+                </div>
+              </div>
+
+              <form id="form-finish-harian" onsubmit="return false;" class="finish-form mt-2">
+                
+                <!-- Nama Teknisi -->
+                <div class="form-group">
+                  <label for="finish-nama">Nama Teknisi</label>
+                  <div class="input-icon-wrapper">
+                    <i data-lucide="user" class="input-icon"></i>
+                    <select id="finish-nama" class="custom-select" style="padding-left:36px; font-weight:700; color:var(--primary);"></select>
+                  </div>
+                </div>
+
+                <!-- Tanggal -->
+                <div class="form-group">
+                  <label for="finish-tgl">Tanggal Laporan</label>
+                  <div class="input-icon-wrapper">
+                    <i data-lucide="calendar" class="input-icon"></i>
+                    <input type="text" id="finish-tgl" class="custom-select" placeholder="dd/mm/yyyy" style="padding-left:36px;" required onfocus="(this.type='date')" onblur="if(!this.value)this.type='text'" onchange="if(!this.value)this.type='text'" />
+                  </div>
+                </div>
+
+                <!-- Questions Grid -->
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label for="finish-case-outdoor">Jumlah Case Ditugaskan (Outdoor)</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="sun" class="input-icon"></i>
+                      <input type="number" id="finish-case-outdoor" min="0" />
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="finish-finish-outdoor">Jumlah Case Finish Outdoor</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="check-circle" class="input-icon"></i>
+                      <input type="number" id="finish-finish-outdoor" min="0" />
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="finish-finish-indoor">Jumlah Case Finish Indoor</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="home" class="input-icon"></i>
+                      <input type="number" id="finish-finish-indoor" min="0" />
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="finish-wip-comp">Jumlah Case WIP COMP</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="clock" class="input-icon"></i>
+                      <input type="number" id="finish-wip-comp" min="0" />
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="finish-wip-tech">Jumlah Case WIP TECH (IN)</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="wrench" class="input-icon"></i>
+                      <input type="number" id="finish-wip-tech" min="0" />
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="finish-batal">Jumlah Case Batal</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="x-circle" class="input-icon"></i>
+                      <input type="number" id="finish-batal" min="0" />
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="finish-antar">Pengembalian (Antar)</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="truck" class="input-icon"></i>
+                      <input type="number" id="finish-antar" min="0" />
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="finish-no-visit">Tidak Terkunjungi</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="alert-circle" class="input-icon"></i>
+                      <input type="number" id="finish-no-visit" min="0" />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Keterangan Finish -->
+                <div class="form-group">
+                  <label for="finish-ket">Keterangan Finish</label>
+                  <div class="input-icon-wrapper">
+                    <i data-lucide="message-square" class="input-icon"></i>
+                    <input type="text" id="finish-ket" placeholder="Keterangan finish <4 ( >4 isi 0)..." />
+                  </div>
+                </div>
+
+                <button type="button" id="btn-submit-finish" class="btn btn-primary btn-block btn-sm mt-3">
+                  <i data-lucide="send"></i> KIRIM LAPORAN FINISH HARIAN
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- SUB-PAGE 2: SEMUA DATA (BULAN INI) -->
+          <div id="finish-page-all" class="finish-page-content" style="display:none; height:100%; flex:1; flex-direction:column; min-height:0; overflow:hidden;">
+            <div class="card" style="height:100%; flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; padding:10px 10px 6px 10px;">
+              
+              <!-- Fixed Header & Search Card -->
+              <div class="finish-all-fixed-header" style="flex:0 0 auto; background:var(--bg-card); padding-bottom:6px; border-bottom:1px solid var(--border-color); margin-bottom:8px;">
+                <div class="card-header flex-between align-center" style="margin-bottom: 6px;">
+                  <div class="card-title" style="color:var(--primary); font-size:14px; font-weight:700; display:flex; align-items:center; gap:6px;">
+                    <i data-lucide="clipboard-list"></i> Semua Data Finish (Bulan Ini)
+                  </div>
+                  <button type="button" id="btn-refresh-finish-all" class="btn btn-ghost btn-xs" style="display:none; font-size:11px; font-weight:700; gap:4px; padding:4px 8px; border-radius:4px;" title="Refresh Data dari Google Sheet">
+                    <i data-lucide="refresh-cw" id="sync-icon-finish-all"></i> Refresh Data
+                  </button>
+                </div>
+
+                <!-- Filter Bar (Card Pencarian Paten - 1 Baris) -->
+                <div class="finish-filter-bar align-center mb-2" style="background:var(--card-bg-light); padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); display:flex; gap:6px; align-items:center;">
+                  <input type="text" id="finish-all-filter-date" class="custom-select" placeholder="dd/mm/yyyy" style="font-size:11.5px; padding:4px 6px; height:32px; flex:1; min-width:0; border-radius:4px;" title="Filter berdasarkan Tanggal" onfocus="(this.type='date')" onblur="if(!this.value)this.type='text'" onchange="if(!this.value)this.type='text'" />
+                  <div id="finish-all-tech-filter-wrapper" style="flex:1; min-width:0; display:none;">
+                    <input type="text" id="finish-all-filter-tech" placeholder="Cari nama teknisi..." class="custom-select" style="font-size:11.5px; padding:4px 8px; height:32px; width:100%; border-radius:4px;" autocomplete="off" />
+                  </div>
+                  <button type="button" id="btn-clear-finish-filter-date" class="btn btn-ghost btn-xs" style="display:none; width:32px; height:32px; min-width:32px; padding:0; flex-shrink:0; align-items:center; justify-content:center; border-radius:4px; color:var(--danger); border:1px solid var(--border-color);" title="Reset Filter">
+                    <i data-lucide="x" style="width:16px; height:16px;"></i>
+                  </button>
+                </div>
+
+                <!-- Summary Stats Box -->
+                <div id="finish-all-summary">
+                  <div style="text-align:center; padding:8px; color:var(--text-muted);">
+                    <i data-lucide="loader-2" class="spin-lg"></i>
+                    <p style="margin-top:4px; font-size:12px;">Memuat data laporan finish...</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- List Container (Only list items scroll) -->
+              <div id="finish-all-list" class="finish-all-list-container" style="flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding-right:2px;">
+                <!-- All data cards rendered here -->
               </div>
             </div>
-
-            <form id="form-finish-harian" onsubmit="return false;" class="finish-form mt-2">
-              
-              <!-- Nama Teknisi -->
-              <div class="form-group">
-                <label for="finish-nama">Nama Teknisi</label>
-                <div class="input-icon-wrapper">
-                  <i data-lucide="user" class="input-icon"></i>
-                  <select id="finish-nama" class="custom-select" style="padding-left:36px; font-weight:700; color:var(--primary);"></select>
-                </div>
-              </div>
-
-              <!-- Tanggal -->
-              <div class="form-group">
-                <label for="finish-tgl">Tanggal Laporan</label>
-                <div class="input-icon-wrapper">
-                  <i data-lucide="calendar" class="input-icon"></i>
-                  <input type="date" id="finish-tgl" class="custom-select" style="padding-left:36px;" required />
-                </div>
-              </div>
-
-              <!-- Questions Grid -->
-              <div class="form-grid-2">
-                <div class="form-group">
-                  <label for="finish-case-outdoor">Jumlah Case Ditugaskan (Outdoor)</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="sun" class="input-icon"></i>
-                    <input type="number" id="finish-case-outdoor" min="0" placeholder="0" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="finish-finish-outdoor">Jumlah Case Finish Outdoor</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="check-circle" class="input-icon"></i>
-                    <input type="number" id="finish-finish-outdoor" min="0" placeholder="0" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="finish-finish-indoor">Jumlah Case Finish Indoor</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="home" class="input-icon"></i>
-                    <input type="number" id="finish-finish-indoor" min="0" placeholder="0" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="finish-wip-comp">Jumlah Case WIP COMP</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="clock" class="input-icon"></i>
-                    <input type="number" id="finish-wip-comp" min="0" placeholder="0" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="finish-wip-tech">Jumlah Case WIP TECH (IN)</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="wrench" class="input-icon"></i>
-                    <input type="number" id="finish-wip-tech" min="0" placeholder="0" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="finish-batal">Jumlah Case Batal</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="x-circle" class="input-icon"></i>
-                    <input type="number" id="finish-batal" min="0" placeholder="0" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="finish-antar">Pengembalian (Antar)</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="truck" class="input-icon"></i>
-                    <input type="number" id="finish-antar" min="0" placeholder="0" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="finish-no-visit">Tidak Terkunjungi</label>
-                  <div class="input-icon-wrapper">
-                    <i data-lucide="alert-circle" class="input-icon"></i>
-                    <input type="number" id="finish-no-visit" min="0" placeholder="0" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Keterangan Finish -->
-              <div class="form-group">
-                <label for="finish-ket">Keterangan Finish</label>
-                <div class="input-icon-wrapper">
-                  <i data-lucide="message-square" class="input-icon"></i>
-                  <input type="text" id="finish-ket" placeholder="Keterangan finish <4 ( >4 isi 0)..." />
-                </div>
-              </div>
-
-              <button type="button" id="btn-submit-finish" class="btn btn-primary btn-block btn-sm mt-3">
-                <i data-lucide="send"></i> KIRIM LAPORAN FINISH HARIAN
-              </button>
-            </form>
           </div>
+
         </section>
 
         <!-- TAB 6: DEDICATED HALAMAN PROFIL -->
@@ -456,8 +634,8 @@
               <i data-lucide="user-check"></i>
             </div>
             <div class="profile-details-text">
-              <h2 id="prof-disp-nama">Nama Teknisi</h2>
-              <span class="prof-badge-nik" id="prof-disp-nik">NIK: -</span>
+              <h2 id="prof-disp-nama"><script>document.write(window.__INIT_NAMA__ || 'Nama Teknisi');</script></h2>
+              <span class="prof-badge-nik" id="prof-disp-nik"><script>document.write(window.__INIT_NIK__ ? 'NIK: ' + window.__INIT_NIK__ : 'NIK: -');</script></span>
               <span class="prof-status-online"><i data-lucide="circle-dot"></i> Akun Teknisi Aktif</span>
             </div>
           </div>
@@ -608,6 +786,29 @@
             </div>
           </div>
 
+          <!-- PENGATURAN MODE PROSES TRANSFER (KHUSUS MUNCUL JIKA TRANSFER STOK TERLIHAT) -->
+          <div id="admin-process-mode-container" class="card card-admin-settings mb-4" style="display: none;">
+            <div class="card-header flex-between">
+              <div class="card-title">
+                <i data-lucide="cpu"></i> Mode Proses Transfer Stok (STAFPART / HODS)
+              </div>
+            </div>
+            <div class="card-body" style="padding: 12px 14px;">
+              <div class="switch-card" style="margin-bottom: 0;">
+                <div class="switch-info">
+                  <div class="switch-label">
+                    <i data-lucide="layers"></i> MODE PENGERJAAN: <strong id="admin-process-mode-label" style="color:var(--primary); font-weight: 800;">STAFPART</strong>
+                  </div>
+                  <div class="switch-subtext" id="admin-process-mode-desc">STAFPART: Memerlukan pilihan dropdown SKM / HIT saat pengerjaan stok.</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="admin-process-mode-toggle" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-header">
               <div class="card-title">
@@ -654,9 +855,21 @@
           <i data-lucide="trending-up"></i>
           <span>Performa</span>
         </button>
+        <button class="nav-item" data-target="tab-part-kembali" data-mode="teknisi" title="Part Belum Kembali">
+          <i data-lucide="package"></i>
+          <span>PART</span>
+        </button>
+        <button class="nav-item" data-target="tab-tagihan" data-mode="teknisi" title="Tagihan Teknisi">
+          <i data-lucide="banknote"></i>
+          <span>TAGIHAN</span>
+        </button>
         <button class="nav-item" data-target="tab-finish" data-mode="finish" title="Input Finish Harian">
-          <i data-lucide="clipboard-check"></i>
+          <i data-lucide="edit-3"></i>
           <span>Form</span>
+        </button>
+        <button class="nav-item" data-target="tab-finish-all" data-mode="finish" title="Semua Data Laporan Finish">
+          <i data-lucide="clipboard-list"></i>
+          <span>Semua Data</span>
         </button>
 
         <button class="nav-item" data-target="tab-pipo" data-mode="pipo">
@@ -699,7 +912,7 @@
     </div>
 
     <!-- ==========================================
-         BLOCKING QUEUE MODAL (NO OK / NO X / NO CLOSE BUTTON)
+         BLOCKING QUEUE MODAL (ONLY ACTIVE IN TRANSFER STOK MODE)
          ========================================== -->
     <div id="modal-queue" class="modal-overlay modal-queue-overlay">
       <div class="modal-card modal-queue-card">
@@ -718,10 +931,18 @@
           <div class="queue-subtext" id="modal-queue-subtext">
             <span>Status: <strong id="queue-status-text">MENGANTRI / DIPROSES...</strong></span>
           </div>
+          <div style="margin-top: 16px;">
+            <button type="button" id="btn-queue-back-menu" class="btn btn-secondary btn-sm" style="border-radius: 4px; gap: 6px; padding: 6px 14px; font-weight: 600;">
+              <i data-lucide="home"></i> Kembali ke Menu Utama
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- ==========================================
+         MODAL LIHAT DATA MISSING FINISH HARIAN (PADDED MODAL 2MM)
+         ========================================== -->
     <!-- ==========================================
          MODAL LIHAT DATA MISSING FINISH HARIAN (PADDED MODAL 2MM)
          ========================================== -->
@@ -731,19 +952,14 @@
           <div class="modal-title" style="color:var(--primary); font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px;">
             <i data-lucide="calendar-x"></i> Tanggal Belum Diisi (Bulan Ini)
           </div>
-          <div style="display: flex; align-items: center; gap: 6px; margin-right: 32px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
             <button type="button" id="btn-refresh-missing" class="btn btn-ghost btn-xs" style="font-size: 11px; font-weight: 700; gap: 4px; padding: 4px 8px; border-radius: 4px;" title="Refresh Data dari Google Sheet">
               <i data-lucide="refresh-cw" id="sync-icon-missing"></i> Refresh
             </button>
           </div>
-          <button type="button" id="btn-close-missing-modal" class="btn-clear" style="position: absolute; top: 50%; transform: translateY(-50%); right: 6px; width: 30px; height: 30px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer;" title="Tutup">
-            <i data-lucide="x"></i>
-          </button>
         </div>
         <div class="modal-body" style="padding: 10px 8px; overflow-y: auto; flex: 1;">
-          <div id="missing-finish-summary" class="mb-3" style="font-size: 12.5px; color: var(--text-muted); line-height: 1.4;">
-            Memuat data laporan dari Google Sheet...
-          </div>
+          <div id="missing-finish-summary" class="mb-3" style="font-size: 12.5px; color: var(--text-muted); line-height: 1.4;"></div>
           <div id="missing-finish-list" class="missing-list-container" style="display: flex; flex-direction: column; gap: 8px;">
             <!-- List of dates rendered here -->
           </div>
@@ -819,6 +1035,6 @@
 
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=7.0"></script>
 </body>
 </html>

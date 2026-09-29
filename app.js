@@ -15,7 +15,9 @@ const STORAGE_KEYS = {
   THEME: 'teknisi_app_theme',
   SHEETS_CACHE: 'google_sheets_cache',
   PIPO_CACHE: 'pipo_sheets_cache',
-  FINISH_HISTORY: 'teknisi_finish_history'
+  FINISH_HISTORY: 'teknisi_finish_history',
+  FINISH_SHEET_CACHE: 'finish_sheet_cache',
+  LAST_TAB: 'teknisi_last_active_tab'
 };
 
 let state = {
@@ -49,19 +51,28 @@ let state = {
   adminUsersChannel: null,
   appSettingsChannel: null,
   showTransferStok: false,
+  transferProcessMode: 'STAFPART', // 'STAFPART' | 'HODS'
   // Google Sheets Data State
+  tagihanSearchQuery: '',
   sheetsData: {
-    lastUpdateTimestamp: 'Memuat...',
+    lastUpdateTimestamp: 'Memuat data....',
+    pendingTimestamp: 'Memuat data....',
+    performaTimestamp: 'Memuat data....',
+    partKembaliTimestamp: 'Memuat data....',
+    tagihanTimestamp: 'Memuat data....',
     lastSyncTime: null,
     pendingCases: [],
     insentifRows: [],
     rata2Rows: [],
     outputHariIni: [],
-    notifications: []
+    notifications: [],
+    partBelumKembali: [],
+    tagihanRows: []
   },
   sheetsPollTimer: null,
   isFetchingSheets: false,
   pendingSearchQuery: '',
+  partKembaliSearchQuery: '',
   // PIPO Part Pengganti State
   pipoData: [],
   isFetchingPipo: false,
@@ -142,6 +153,18 @@ const DOM = {
   syncIconMissing: document.getElementById('sync-icon-missing'),
   missingFinishSummary: document.getElementById('missing-finish-summary'),
   missingFinishList: document.getElementById('missing-finish-list'),
+  btnFinishPageForm: document.getElementById('btn-finish-page-form'),
+  btnFinishPageAll: document.getElementById('btn-finish-page-all'),
+  finishPageForm: document.getElementById('finish-page-form'),
+  finishPageAll: document.getElementById('finish-page-all'),
+  btnRefreshFinishAll: document.getElementById('btn-refresh-finish-all'),
+  syncIconFinishAll: document.getElementById('sync-icon-finish-all'),
+  finishAllFilterDate: document.getElementById('finish-all-filter-date'),
+  btnClearFinishFilterDate: document.getElementById('btn-clear-finish-filter-date'),
+  finishAllFilterTech: document.getElementById('finish-all-filter-tech'),
+  finishAllTechFilterWrapper: document.getElementById('finish-all-tech-filter-wrapper'),
+  finishAllSummary: document.getElementById('finish-all-summary'),
+  finishAllList: document.getElementById('finish-all-list'),
 
   // Navigation Badges
   navPendingBadge: document.getElementById('nav-pending-badge'),
@@ -160,6 +183,21 @@ const DOM = {
   btnRefreshNotif: document.getElementById('btn-refresh-notif'),
   notifTechCount: document.getElementById('notif-tech-count'),
   notifListContainer: document.getElementById('notif-list-container'),
+  
+  // Part Bekas Controls
+  inputSearchPartKembali: document.getElementById('input-search-part-kembali'),
+  btnClearSearchPartKembali: document.getElementById('btn-clear-search-part-kembali'),
+  partKembaliCount: document.getElementById('part-kembali-count'),
+  partKembaliTotalQty: document.getElementById('part-kembali-total-qty'),
+  partKembaliListContainer: document.getElementById('part-kembali-list-container'),
+
+  // Tagihan Controls
+  tagihanUpdateTimestamp: document.getElementById('tagihan-update-timestamp'),
+  tagihanCount: document.getElementById('tagihan-count'),
+  tagihanTotalJumlah: document.getElementById('tagihan-total-jumlah'),
+  inputSearchTagihan: document.getElementById('input-search-tagihan'),
+  btnClearSearchTagihan: document.getElementById('btn-clear-search-tagihan'),
+  tagihanListContainer: document.getElementById('tagihan-list-container'),
   
   // Dedicated Profile Display
   profDispNama: document.getElementById('prof-disp-nama'),
@@ -200,6 +238,7 @@ const DOM = {
   modalQueue: document.getElementById('modal-queue'),
   modalQueueMsg: document.getElementById('modal-queue-msg'),
   queueStatusText: document.getElementById('queue-status-text'),
+  btnQueueBackMenu: document.getElementById('btn-queue-back-menu'),
   
   // Profile Form
   profileNama: document.getElementById('profile-nama'),
@@ -216,6 +255,10 @@ const DOM = {
 
   // Admin User Management & App Settings
   adminTransferStokToggle: document.getElementById('admin-transfer-stok-toggle'),
+  adminProcessModeContainer: document.getElementById('admin-process-mode-container'),
+  adminProcessModeToggle: document.getElementById('admin-process-mode-toggle'),
+  adminProcessModeLabel: document.getElementById('admin-process-mode-label'),
+  adminProcessModeDesc: document.getElementById('admin-process-mode-desc'),
   adminUserCount: document.getElementById('admin-user-count'),
   btnOpenAddUser: document.getElementById('btn-open-add-user'),
   adminUsersList: document.getElementById('admin-users-list'),
@@ -327,6 +370,16 @@ function checkLoginSession() {
           };
           updateUIFromState();
         } else {
+          const storedProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
+          if (storedProfile) {
+            try {
+              const parsedProfile = JSON.parse(storedProfile);
+              if (parsedProfile && parsedProfile.nama) {
+                state.profile = parsedProfile;
+              }
+            } catch (e) {}
+          }
+          updateUIFromState();
           syncProfileFromSupabase(parsed.nik);
         }
         showAppScreen();
@@ -341,6 +394,7 @@ function checkLoginSession() {
 function showLoginScreen() {
   state.isLoggedIn = false;
   state.isAdmin = false;
+  document.documentElement.classList.remove('is-logged-in');
   DOM.screenLogin.classList.add('active');
   DOM.screenApp.classList.remove('active');
   stopScanner();
@@ -359,15 +413,27 @@ function showLoginScreen() {
 }
 
 function showAppScreen() {
+  document.documentElement.classList.add('is-logged-in');
   DOM.screenLogin.classList.remove('active');
   DOM.screenApp.classList.add('active');
 
+  const hashTab = window.location.hash ? window.location.hash.replace('#', '') : '';
+  const savedTab = localStorage.getItem(STORAGE_KEYS.LAST_TAB);
+
+  const validTabs = ['tab-menu', 'tab-scan', 'tab-history', 'tab-pending', 'tab-performa', 'tab-notif', 'tab-part-kembali', 'tab-tagihan', 'tab-pipo', 'tab-finish', 'tab-finish-all', 'tab-profile'];
+  let initialTab = 'tab-menu';
+
+  if (hashTab && validTabs.includes(hashTab)) {
+    initialTab = hashTab;
+  } else if (savedTab && validTabs.includes(savedTab)) {
+    initialTab = savedTab;
+  }
+
   try {
-    history.replaceState({ tab: 'tab-menu' }, '', '#tab-menu');
-    history.pushState({ tab: 'tab-menu' }, '', '#tab-menu');
+    history.replaceState({ tab: initialTab }, '', '#' + initialTab);
   } catch (e) {}
 
-  switchTab('tab-menu', false);
+  switchTab(initialTab, false);
   updateUIFromState();
   subscribeRealtimeSettings();
   subscribeGlobalQueueRealtime();
@@ -417,7 +483,7 @@ function unsubscribeRealtime() {
 }
 
 // ==========================================
-// REALTIME APP SETTINGS (SHOW / HIDE TRANSFER STOK MENU)
+// REALTIME APP SETTINGS (SHOW / HIDE TRANSFER STOK MENU & PROCESS MODE)
 // ==========================================
 async function fetchAppSettings() {
   if (!state.supabaseClient) return;
@@ -426,21 +492,31 @@ async function fetchAppSettings() {
     const { data, error } = await state.supabaseClient
       .from('app_settings')
       .select('*')
-      .eq('setting_key', 'show_transfer_stok')
-      .maybeSingle();
+      .in('setting_key', ['show_transfer_stok', 'transfer_process_mode']);
 
     if (error) {
       console.warn('Error fetch app_settings:', error);
       return;
     }
 
-    if (data) {
-      state.showTransferStok = (data.setting_value === 'true' || data.setting_value === true);
+    if (data && data.length > 0) {
+      const stokSetting = data.find(s => s.setting_key === 'show_transfer_stok');
+      if (stokSetting) {
+        state.showTransferStok = (stokSetting.setting_value === 'true' || stokSetting.setting_value === true);
+      }
+      const modeSetting = data.find(s => s.setting_key === 'transfer_process_mode');
+      if (modeSetting) {
+        state.transferProcessMode = modeSetting.setting_value || 'STAFPART';
+      }
     } else {
       await state.supabaseClient
         .from('app_settings')
-        .upsert({ setting_key: 'show_transfer_stok', setting_value: 'true', updated_at: new Date().toISOString() });
+        .upsert([
+          { setting_key: 'show_transfer_stok', setting_value: 'true', updated_at: new Date().toISOString() },
+          { setting_key: 'transfer_process_mode', setting_value: 'STAFPART', updated_at: new Date().toISOString() }
+        ]);
       state.showTransferStok = true;
+      state.transferProcessMode = 'STAFPART';
     }
     applyTransferStokVisibilityUI();
   } catch (err) {
@@ -460,24 +536,42 @@ function subscribeAppSettingsRealtime() {
       { event: '*', schema: 'public', table: 'app_settings' },
       (payload) => {
         console.log('Realtime App Settings Postgres Change:', payload);
-        if (payload.new && payload.new.setting_key === 'show_transfer_stok') {
-          const newVal = (payload.new.setting_value === 'true' || payload.new.setting_value === true);
-          if (state.showTransferStok !== newVal) {
-            state.showTransferStok = newVal;
-            applyTransferStokVisibilityUI();
-            showToast(`Pengaturan: Menu Transfer Stok ${newVal ? 'DITAMPILKAN' : 'DISEMBUNYIKAN'}`, 'info');
+        if (payload.new) {
+          if (payload.new.setting_key === 'show_transfer_stok') {
+            const newVal = (payload.new.setting_value === 'true' || payload.new.setting_value === true);
+            if (state.showTransferStok !== newVal) {
+              state.showTransferStok = newVal;
+              applyTransferStokVisibilityUI();
+            }
+          } else if (payload.new.setting_key === 'transfer_process_mode') {
+            const newMode = payload.new.setting_value || 'STAFPART';
+            if (state.transferProcessMode !== newMode) {
+              state.transferProcessMode = newMode;
+              applyTransferStokVisibilityUI();
+              showToast(`Pengaturan: Mode Proses Transfer beralih ke ${newMode}`, 'info');
+            }
           }
         }
       }
     )
     .on('broadcast', { event: 'toggle_transfer_stok' }, (data) => {
-      console.log('Realtime Broadcast App Settings:', data);
+      console.log('Realtime Broadcast App Settings (stok):', data);
       if (data && data.payload && typeof data.payload.enabled === 'boolean') {
         const newVal = data.payload.enabled;
         if (state.showTransferStok !== newVal) {
           state.showTransferStok = newVal;
           applyTransferStokVisibilityUI();
-          showToast(`Pengaturan: Menu Transfer Stok ${newVal ? 'DITAMPILKAN' : 'DISEMBUNYIKAN'}`, 'info');
+        }
+      }
+    })
+    .on('broadcast', { event: 'toggle_process_mode' }, (data) => {
+      console.log('Realtime Broadcast App Settings (mode):', data);
+      if (data && data.payload && data.payload.mode) {
+        const newMode = data.payload.mode;
+        if (state.transferProcessMode !== newMode) {
+          state.transferProcessMode = newMode;
+          applyTransferStokVisibilityUI();
+          showToast(`Pengaturan: Mode Proses Transfer beralih ke ${newMode}`, 'info');
         }
       }
     })
@@ -508,6 +602,26 @@ function applyTransferStokVisibilityUI() {
   scanNavItems.forEach(item => {
     item.style.display = state.showTransferStok ? '' : 'none';
   });
+
+  // Show / Hide Admin Process Mode Container (ONLY visible when show_transfer_stok is TRUE)
+  if (DOM.adminProcessModeContainer) {
+    DOM.adminProcessModeContainer.style.display = state.showTransferStok ? '' : 'none';
+  }
+
+  // Update Process Mode Toggle UI
+  const isHods = (state.transferProcessMode === 'HODS');
+  if (DOM.adminProcessModeToggle) {
+    DOM.adminProcessModeToggle.checked = isHods;
+  }
+  if (DOM.adminProcessModeLabel) {
+    DOM.adminProcessModeLabel.textContent = isHods ? 'HODS' : 'STAFPART';
+    DOM.adminProcessModeLabel.style.color = isHods ? 'var(--warning)' : 'var(--primary)';
+  }
+  if (DOM.adminProcessModeDesc) {
+    DOM.adminProcessModeDesc.textContent = isHods
+      ? 'HODS: Otomatis menjadi SKM (tanpa perlu milih dropdown SKM/HIT).'
+      : 'STAFPART: Memerlukan pilihan dropdown SKM / HIT saat pengerjaan stok.';
+  }
 
   // Redirect if currently on a scan tab and transfer stok is disabled
   if (!state.showTransferStok && (state.activeTab === 'tab-scan' || state.activeTab === 'tab-history')) {
@@ -607,13 +721,12 @@ function setupEventListeners() {
     });
   }
 
-  // Admin App Settings Toggle Listener
+  // Admin App Settings Toggle Listener (Show/Hide Transfer Stok)
   if (DOM.adminTransferStokToggle) {
     DOM.adminTransferStokToggle.addEventListener('change', async (e) => {
       const isChecked = e.target.checked;
       state.showTransferStok = isChecked;
       applyTransferStokVisibilityUI();
-      showToast(`Menu Transfer Stok ${isChecked ? 'DITAMPILKAN' : 'DISEMBUNYIKAN'} di semua perangkat`, 'info');
 
       if (state.supabaseClient) {
         try {
@@ -643,6 +756,44 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Admin App Settings Toggle Listener (Process Mode: STAFPART / HODS)
+  if (DOM.adminProcessModeToggle) {
+    DOM.adminProcessModeToggle.addEventListener('change', async (e) => {
+      const isHods = e.target.checked;
+      const targetMode = isHods ? 'HODS' : 'STAFPART';
+      state.transferProcessMode = targetMode;
+      applyTransferStokVisibilityUI();
+      showToast(`Mode Proses Transfer diubah ke ${targetMode}`, 'info');
+
+      if (state.supabaseClient) {
+        try {
+          const { error } = await state.supabaseClient
+            .from('app_settings')
+            .upsert({
+              setting_key: 'transfer_process_mode',
+              setting_value: targetMode,
+              updated_at: new Date().toISOString()
+            });
+
+          if (error) {
+            console.error('Upsert app_settings error:', error);
+            showToast(`Gagal update mode proses: ${error.message}`, 'error');
+          }
+
+          if (state.appSettingsChannel) {
+            state.appSettingsChannel.send({
+              type: 'broadcast',
+              event: 'toggle_process_mode',
+              payload: { mode: targetMode }
+            });
+          }
+        } catch (err) {
+          console.error('Error saving process mode setting:', err);
+        }
+      }
+    });
+  }
   if (DOM.btnSelectModeTeknisi) {
     DOM.btnSelectModeTeknisi.addEventListener('click', () => {
       requestTabSwitch('tab-pending');
@@ -658,17 +809,99 @@ function setupEventListeners() {
       requestTabSwitch('tab-finish');
     });
   }
+  if (DOM.btnSelectModePartKembali) {
+    DOM.btnSelectModePartKembali.addEventListener('click', () => {
+      requestTabSwitch('tab-part-kembali');
+    });
+  }
+  if (DOM.btnSelectModeTagihan) {
+    DOM.btnSelectModeTagihan.addEventListener('click', () => {
+      requestTabSwitch('tab-tagihan');
+    });
+  }
   if (DOM.btnSubmitFinish) {
     DOM.btnSubmitFinish.addEventListener('click', openFinishConfirmModal);
   }
   if (DOM.headerBtnMissing) DOM.headerBtnMissing.addEventListener('click', () => openMissingModal(false));
   if (DOM.btnOpenMissingModal) DOM.btnOpenMissingModal.addEventListener('click', () => openMissingModal(false));
   if (DOM.btnCloseMissingModal) DOM.btnCloseMissingModal.addEventListener('click', closeMissingModal);
-  if (DOM.btnDismissMissingModal) DOM.btnDismissMissingModal.addEventListener('click', closeMissingModal);
+  if (DOM.btnDismissMissingModal) DOM.btnDismissMissingModal.addEventListener('click', () => closeMissingModal());
   if (DOM.btnRefreshMissing) {
-    DOM.btnRefreshMissing.addEventListener('click', () => {
-      showToast('🔄 Memperbarui data dari Google Sheet...', 'info');
-      openMissingModal(false);
+    DOM.btnRefreshMissing.addEventListener('click', async () => {
+      const syncIcon = document.getElementById('sync-icon-missing') || DOM.syncIconMissing;
+      if (syncIcon) syncIcon.classList.add('spinning');
+      if (DOM.btnRefreshMissing) DOM.btnRefreshMissing.disabled = true;
+      try {
+        await openMissingModal(false, true);
+      } finally {
+        const activeIcon = document.getElementById('sync-icon-missing') || DOM.syncIconMissing;
+        if (activeIcon) activeIcon.classList.remove('spinning');
+        if (DOM.btnRefreshMissing) DOM.btnRefreshMissing.disabled = false;
+      }
+    });
+  }
+
+  if (DOM.btnFinishPageForm) {
+    DOM.btnFinishPageForm.addEventListener('click', () => {
+      if (DOM.btnFinishPageForm) DOM.btnFinishPageForm.classList.add('active');
+      if (DOM.btnFinishPageAll) DOM.btnFinishPageAll.classList.remove('active');
+      if (DOM.finishPageForm) DOM.finishPageForm.style.display = 'block';
+      if (DOM.finishPageAll) DOM.finishPageAll.style.display = 'none';
+    });
+  }
+
+  if (DOM.btnFinishPageAll) {
+    DOM.btnFinishPageAll.addEventListener('click', async () => {
+      if (DOM.btnFinishPageAll) DOM.btnFinishPageAll.classList.add('active');
+      if (DOM.btnFinishPageForm) DOM.btnFinishPageForm.classList.remove('active');
+      if (DOM.finishPageAll) DOM.finishPageAll.style.display = 'block';
+      if (DOM.finishPageForm) DOM.finishPageForm.style.display = 'none';
+      
+      if (DOM.syncIconFinishAll) DOM.syncIconFinishAll.classList.add('spinning');
+      try {
+        const { parsedAllRows } = await fetchFinishSheetData();
+        renderFinishAllDataTab(parsedAllRows);
+      } catch(e) {} finally {
+        if (DOM.syncIconFinishAll) DOM.syncIconFinishAll.classList.remove('spinning');
+      }
+    });
+  }
+
+  if (DOM.btnRefreshFinishAll) {
+    DOM.btnRefreshFinishAll.addEventListener('click', async () => {
+      if (DOM.syncIconFinishAll) DOM.syncIconFinishAll.classList.add('spinning');
+      showToast('🔄 Memperbarui data finish dari Google Sheet...', 'info');
+      try {
+        const { parsedAllRows } = await fetchFinishSheetData();
+        renderFinishAllDataTab(parsedAllRows);
+      } catch(e) {} finally {
+        if (DOM.syncIconFinishAll) DOM.syncIconFinishAll.classList.remove('spinning');
+      }
+    });
+  }
+
+  if (DOM.finishAllFilterDate) {
+    DOM.finishAllFilterDate.addEventListener('change', () => {
+      renderFinishAllDataTab();
+    });
+  }
+
+  if (DOM.btnClearFinishFilterDate) {
+    DOM.btnClearFinishFilterDate.addEventListener('click', () => {
+      if (DOM.finishAllFilterDate) {
+        DOM.finishAllFilterDate.value = '';
+        DOM.finishAllFilterDate.type = 'text';
+      }
+      if (DOM.finishAllFilterTech) DOM.finishAllFilterTech.value = '';
+      renderFinishAllDataTab();
+    });
+  }
+
+  if (DOM.finishNama) {
+    DOM.finishNama.addEventListener('change', () => {
+      if (DOM.modalMissingFinish && DOM.modalMissingFinish.classList.contains('active')) {
+        openMissingModal(true);
+      }
     });
   }
 
@@ -751,6 +984,44 @@ function setupEventListeners() {
     });
   }
 
+  if (DOM.inputSearchPartKembali) {
+    DOM.inputSearchPartKembali.addEventListener('input', (e) => {
+      state.partKembaliSearchQuery = e.target.value;
+      if (DOM.btnClearSearchPartKembali) {
+        DOM.btnClearSearchPartKembali.style.display = e.target.value ? 'block' : 'none';
+      }
+      renderPartKembaliTab();
+    });
+  }
+
+  if (DOM.btnClearSearchPartKembali) {
+    DOM.btnClearSearchPartKembali.addEventListener('click', () => {
+      state.partKembaliSearchQuery = '';
+      if (DOM.inputSearchPartKembali) DOM.inputSearchPartKembali.value = '';
+      DOM.btnClearSearchPartKembali.style.display = 'none';
+      renderPartKembaliTab();
+    });
+  }
+
+  if (DOM.inputSearchTagihan) {
+    DOM.inputSearchTagihan.addEventListener('input', (e) => {
+      state.tagihanSearchQuery = e.target.value;
+      if (DOM.btnClearSearchTagihan) {
+        DOM.btnClearSearchTagihan.style.display = e.target.value ? 'block' : 'none';
+      }
+      renderTagihanTab();
+    });
+  }
+
+  if (DOM.btnClearSearchTagihan) {
+    DOM.btnClearSearchTagihan.addEventListener('click', () => {
+      state.tagihanSearchQuery = '';
+      if (DOM.inputSearchTagihan) DOM.inputSearchTagihan.value = '';
+      DOM.btnClearSearchTagihan.style.display = 'none';
+      renderTagihanTab();
+    });
+  }
+
   // Camera Scanner Buttons
   DOM.btnToggleCamera.addEventListener('click', toggleScanner);
   if (DOM.btnToggleTorch) DOM.btnToggleTorch.addEventListener('click', toggleTorch);
@@ -793,6 +1064,14 @@ function setupEventListeners() {
   if (DOM.btnCancelUserForm) DOM.btnCancelUserForm.addEventListener('click', closeUserModal);
   if (DOM.btnSaveUserForm) DOM.btnSaveUserForm.addEventListener('click', handleSaveUserForm);
 
+  // Queue Modal Back to Main Menu Button
+  if (DOM.btnQueueBackMenu) {
+    DOM.btnQueueBackMenu.addEventListener('click', () => {
+      if (DOM.modalQueue) DOM.modalQueue.classList.remove('active');
+      switchTab('tab-menu');
+    });
+  }
+
   let lastBackPressTime = 0;
 
   // Android & Hardware Back Button Navigation Handler
@@ -801,8 +1080,7 @@ function setupEventListeners() {
 
     // 1. Close active modals first if open
     if (DOM.modalMissingFinish && DOM.modalMissingFinish.classList.contains('active')) {
-      closeMissingModal();
-      try { history.pushState({ tab: state.activeTab }, '', '#' + state.activeTab); } catch (err) {}
+      closeMissingModal(false);
       return;
     }
     if (DOM.modalUserForm && DOM.modalUserForm.classList.contains('active')) {
@@ -832,7 +1110,7 @@ function setupEventListeners() {
     }
 
     // 3. Determine target tab: default to 'tab-menu' if e.state is missing or empty
-    const targetTab = (e.state && e.state.tab) ? e.state.tab : 'tab-menu';
+    let targetTab = (e.state && e.state.tab) ? e.state.tab : 'tab-menu';
 
     // 4. Tab Navigation: check if leaving tab-scan with draft items
     if (state.activeTab === 'tab-scan' && state.draftList.length > 0 && targetTab !== 'tab-scan') {
@@ -1212,9 +1490,15 @@ async function handleLogin() {
     localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({
       isLoggedIn: true,
       nik: authenticatedUser.nik,
+      nama: authenticatedUser.nama,
       isAdmin: state.isAdmin,
       loginAt: new Date().toISOString()
     }));
+
+    // Fresh login after logout goes to Menu Utama (tab-menu)
+    localStorage.setItem(STORAGE_KEYS.LAST_TAB, 'tab-menu');
+    document.documentElement.setAttribute('data-active-tab', 'tab-menu');
+    try { history.replaceState({ tab: 'tab-menu' }, '', '#tab-menu'); } catch (e) {}
 
     state.isLoggedIn = true;
     showAppScreen();
@@ -1234,7 +1518,10 @@ function handleLogout() {
 }
 
 function performLogout() {
+  document.documentElement.classList.remove('is-logged-in');
+  document.documentElement.removeAttribute('data-active-tab');
   localStorage.removeItem(STORAGE_KEYS.SESSION);
+  localStorage.removeItem(STORAGE_KEYS.LAST_TAB);
   showLoginScreen();
   showToast('Anda telah keluar dari akun.', 'info');
 }
@@ -1252,11 +1539,11 @@ function updateModeNavVisibility(targetTabId) {
     state.currentMode = 'menu';
   } else if (targetTabId === 'tab-scan' || targetTabId === 'tab-history') {
     state.currentMode = 'scan';
-  } else if (targetTabId === 'tab-pending' || targetTabId === 'tab-performa' || targetTabId === 'tab-notif') {
+  } else if (targetTabId === 'tab-pending' || targetTabId === 'tab-performa' || targetTabId === 'tab-notif' || targetTabId === 'tab-part-kembali' || targetTabId === 'tab-tagihan') {
     state.currentMode = 'teknisi';
   } else if (targetTabId === 'tab-pipo') {
     state.currentMode = 'pipo';
-  } else if (targetTabId === 'tab-finish') {
+  } else if (targetTabId === 'tab-finish' || targetTabId === 'tab-finish-all') {
     state.currentMode = 'finish';
   }
 
@@ -1267,7 +1554,7 @@ function updateModeNavVisibility(targetTabId) {
   }
 
   // 2. Header LIHAT DATA Button (#header-btn-missing)
-  // Show ONLY in finish mode (tab-finish), replacing the PSW badge in top right header!
+  // Show ONLY on Form Input Finish page (tab-finish). Hide on all other pages.
   if (DOM.headerBtnMissing) {
     DOM.headerBtnMissing.classList.toggle('hidden', targetTabId !== 'tab-finish');
   }
@@ -1322,24 +1609,65 @@ function switchTab(targetTabId, pushState = true) {
     } catch (e) {}
   }
   state.activeTab = targetTabId;
+  try {
+    localStorage.setItem(STORAGE_KEYS.LAST_TAB, targetTabId);
+    document.documentElement.setAttribute('data-active-tab', targetTabId);
+  } catch (e) {}
 
   updateModeNavVisibility(targetTabId);
 
   DOM.navItems.forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-target') === targetTabId);
   });
+
+  const activeSectionId = (targetTabId === 'tab-finish-all') ? 'tab-finish' : targetTabId;
   DOM.tabContents.forEach(content => {
-    content.classList.toggle('active', content.id === targetTabId);
+    content.classList.toggle('active', content.id === activeSectionId);
   });
 
-  if (targetTabId === 'tab-pipo') {
-    renderPipoTab();
-  }
-  if (targetTabId === 'tab-finish') {
-    prepareFinishForm();
-    renderFinishHistory();
+  // Toggle Global Queue Modal visibility based on active tab (Show ONLY on Transfer Stok: tab-scan & tab-history)
+  if (state.isGlobalQueueBlocking && (targetTabId === 'tab-scan' || targetTabId === 'tab-history')) {
+    if (DOM.modalQueue) DOM.modalQueue.classList.add('active');
+  } else {
+    if (DOM.modalQueue) DOM.modalQueue.classList.remove('active');
   }
 
+  if (targetTabId !== 'tab-finish-all') {
+    if (DOM.finishAllFilterDate) DOM.finishAllFilterDate.value = '';
+    if (DOM.finishAllFilterTech) DOM.finishAllFilterTech.value = '';
+    if (DOM.btnClearFinishFilterDate) DOM.btnClearFinishFilterDate.style.display = 'none';
+  }
+
+  if (targetTabId === 'tab-pipo') {
+    state.pipoSearchQuery = '';
+    state.pipoLimit = 40;
+    if (DOM.inputSearchPipo) DOM.inputSearchPipo.value = '';
+    if (DOM.btnClearSearchPipo) DOM.btnClearSearchPipo.style.display = 'none';
+    renderPipoTab();
+  }
+  if (targetTabId === 'tab-finish-all') {
+    if (DOM.btnFinishPageAll) DOM.btnFinishPageAll.classList.add('active');
+    if (DOM.btnFinishPageForm) DOM.btnFinishPageForm.classList.remove('active');
+    if (DOM.finishPageAll) DOM.finishPageAll.style.display = 'flex';
+    if (DOM.finishPageForm) DOM.finishPageForm.style.display = 'none';
+
+    if (DOM.syncIconFinishAll) DOM.syncIconFinishAll.classList.add('spinning');
+    fetchFinishSheetData().then(({ parsedAllRows }) => {
+      renderFinishAllDataTab(parsedAllRows);
+    }).catch(e => {}).finally(() => {
+      if (DOM.syncIconFinishAll) DOM.syncIconFinishAll.classList.remove('spinning');
+    });
+  } else if (targetTabId === 'tab-finish') {
+    prepareFinishForm();
+    renderFinishHistory();
+
+    if (DOM.btnFinishPageForm) DOM.btnFinishPageForm.classList.add('active');
+    if (DOM.btnFinishPageAll) DOM.btnFinishPageAll.classList.remove('active');
+    if (DOM.finishPageForm) DOM.finishPageForm.style.display = 'block';
+    if (DOM.finishPageAll) DOM.finishPageAll.style.display = 'none';
+  }
+
+  renderSheetUpdateInfo();
   lucide.createIcons();
 }
 
@@ -1682,6 +2010,7 @@ async function handleSubmitBatchToSupabase() {
     qty: item.qty,
     use_password: state.profile.usePsw,
     password: state.profile.usePsw ? (state.profile.psw || '') : '',
+    process_mode: state.transferProcessMode || 'STAFPART',
     status: 'pending',
     created_at: new Date().toISOString()
   }));
@@ -1696,17 +2025,19 @@ async function handleSubmitBatchToSupabase() {
         .insert(batchPayloads)
         .select('id, status');
 
-      // Fallback if unit_id or jenis column does not exist in Supabase schema yet
+      // Fallback if unit_id, jenis, or process_mode column does not exist in Supabase schema yet
       if (error && error.message) {
         const hasMissingUnit = error.message.includes('unit_id');
         const hasMissingJenis = error.message.includes('jenis');
+        const hasMissingProcessMode = error.message.includes('process_mode');
 
-        if (hasMissingUnit || hasMissingJenis) {
+        if (hasMissingUnit || hasMissingJenis || hasMissingProcessMode) {
           console.warn('Column missing in Supabase schema, retrying fallback payload...', error.message);
           const fallbackPayloads = batchPayloads.map(p => {
             const payloadCopy = { ...p };
             if (hasMissingUnit) delete payloadCopy.unit_id;
             if (hasMissingJenis) delete payloadCopy.jenis;
+            if (hasMissingProcessMode) delete payloadCopy.process_mode;
             return payloadCopy;
           });
 
@@ -1828,11 +2159,15 @@ function openGlobalQueueModal(pendingRecords = []) {
     }
   }
 
-  if (!state.isGlobalQueueBlocking) {
-    state.isGlobalQueueBlocking = true;
-    if (DOM.queueStatusText) DOM.queueStatusText.textContent = 'MENGANTRI / DIPROSES...';
+  state.isGlobalQueueBlocking = true;
+  if (DOM.queueStatusText) DOM.queueStatusText.textContent = 'MENGANTRI / DIPROSES...';
+
+  // Show modal ONLY IF user is currently on Transfer Stok menu (tab-scan or tab-history)
+  if (state.activeTab === 'tab-scan' || state.activeTab === 'tab-history') {
     if (DOM.modalQueue) DOM.modalQueue.classList.add('active');
     lucide.createIcons();
+  } else {
+    if (DOM.modalQueue) DOM.modalQueue.classList.remove('active');
   }
 }
 
@@ -1891,7 +2226,7 @@ function escapeHtml(str) {
 // ==========================================
 // TOAST SYSTEM
 // ==========================================
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', duration = 600) {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
 
@@ -1907,9 +2242,9 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateY(-6px)';
-    toast.style.transition = 'all 0.2s ease';
-    setTimeout(() => toast.remove(), 200);
-  }, 3000);
+    toast.style.transition = 'all 0.15s ease';
+    setTimeout(() => toast.remove(), 150);
+  }, duration);
 }
 
 // ==========================================
@@ -2526,9 +2861,14 @@ const VALID_FORM_TECHNICIANS = [
 ];
 
 function prepareFinishForm() {
-  if (DOM.finishTgl && !DOM.finishTgl.value) {
-    const today = new Date().toISOString().split('T')[0];
-    DOM.finishTgl.value = today;
+  if (DOM.finishTgl) {
+    if (!DOM.finishTgl.value) {
+      const today = new Date().toISOString().split('T')[0];
+      DOM.finishTgl.type = 'date';
+      DOM.finishTgl.value = today;
+    } else {
+      DOM.finishTgl.type = 'date';
+    }
   }
 
   // Clear numeric inputs so they are empty by default (no 0)
@@ -2657,83 +2997,215 @@ function normalizeDateString(str) {
 
 async function fetchFinishSheetData() {
   const filledDatesSet = new Set();
+  const parsedAllRows = [];
   const targetTechName = DOM.finishNama ? DOM.finishNama.value : (state.profile ? state.profile.nama : '');
 
-  // 1. Fetch directly from Google Sheet tabs (Form Responses 1 / DATA)
+  const FINISH_SPREADSHEET_ID = '1cFbwWRRxD6vj7XNFLzmxF_Mma9TP3qvsdMSEYIDg47M';
+
   let rows = [];
   try {
-    const table = await fetchGVizSheet('Form Responses 1');
+    const table = await fetchGVizSheetCustom(FINISH_SPREADSHEET_ID, 'Form Responses 1');
     rows = extractMatrixFromGViz(table);
   } catch (e1) {
     try {
-      const table = await fetchGVizSheet('DATA');
+      const table = await fetchGVizSheetCustom(FINISH_SPREADSHEET_ID, 'Form Responses');
       rows = extractMatrixFromGViz(table);
     } catch (e2) {
-      console.warn('Gagal fetch sheet finish:', e2);
+      console.warn('Gagal fetch sheet finish response:', e2);
     }
   }
+
+  const now = new Date();
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   if (rows && rows.length > 0) {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      if (!row || row.length === 0) continue;
-      let rowNama = '';
-      let rowTgl = '';
+      if (!row || row.length < 4) continue;
 
-      for (let c = 0; c < row.length; c++) {
-        const cellVal = String(row[c] || '').trim();
-        if (!cellVal) continue;
+      const rowNama = String(row[2] || '').trim();
+      const rowTglRaw = String(row[3] || '').trim();
 
-        if (targetTechName && matchTechName(cellVal, targetTechName)) {
-          rowNama = cellVal;
+      if (rowNama && rowTglRaw) {
+        const normTgl = normalizeDateString(rowTglRaw);
+        if (normTgl && /^\d{4}-\d{2}-\d{2}$/.test(normTgl)) {
+          // Check if record belongs to current month & year
+          if (normTgl.startsWith(currentYearMonth)) {
+            const entryObj = {
+              id: row[0] || i,
+              timestampCreated: String(row[1] || '').trim(),
+              nama: rowNama,
+              tglLaporan: normTgl,
+              tglRaw: rowTglRaw,
+              caseOutdoor: parseInt(row[4] || 0, 10) || 0,
+              finishOutdoor: parseInt(row[5] || 0, 10) || 0,
+              finishIndoor: parseInt(row[6] || 0, 10) || 0,
+              wipComp: parseInt(row[7] || 0, 10) || 0,
+              wipTech: parseInt(row[8] || 0, 10) || 0,
+              batal: parseInt(row[9] || 0, 10) || 0,
+              antar: parseInt(row[10] || 0, 10) || 0,
+              noVisit: parseInt(row[11] || 0, 10) || 0,
+              ket: String(row[12] || '').trim(),
+              bulan: String(row[13] || '').trim()
+            };
+
+            // Filter according to user role / logged in user
+            if (state.isAdmin || matchTechName(rowNama, targetTechName, state.profile ? state.profile.nik : '')) {
+              parsedAllRows.push(entryObj);
+            }
+
+            if (targetTechName && isSameTechnicianName(rowNama, targetTechName)) {
+              filledDatesSet.add(normTgl);
+            }
+          }
         }
-
-        const norm = normalizeDateString(cellVal);
-        if (norm && /^\d{4}-\d{2}-\d{2}$/.test(norm)) {
-          rowTgl = norm;
-        }
-      }
-
-      if (rowNama && rowTgl) {
-        filledDatesSet.add(rowTgl);
       }
     }
   }
 
-  // 2. Also merge locally submitted items in state.finishHistory
-  (state.finishHistory || []).forEach(item => {
-    if (item.nama && targetTechName && matchTechName(item.nama, targetTechName)) {
-      const normTgl = normalizeDateString(item.tgl);
-      if (normTgl) filledDatesSet.add(normTgl);
-    }
-  });
+  // Sort parsedAllRows by tglLaporan descending
+  parsedAllRows.sort((a, b) => b.tglLaporan.localeCompare(a.tglLaporan));
+  state.finishParsedAllRows = parsedAllRows;
 
-  return filledDatesSet;
+  return { filledDatesSet, parsedAllRows };
 }
 
-async function openMissingModal(isAutoRefresh = false) {
+function renderFinishAllDataTab(parsedRows = null) {
+  if (!DOM.finishPageAll) return;
+  const rows = parsedRows || state.finishParsedAllRows || [];
+
+  const dateFilter = DOM.finishAllFilterDate ? DOM.finishAllFilterDate.value : '';
+  const techFilter = DOM.finishAllFilterTech ? DOM.finishAllFilterTech.value.trim().toUpperCase() : '';
+
+  if (DOM.finishAllTechFilterWrapper) {
+    DOM.finishAllTechFilterWrapper.style.display = state.isAdmin ? 'flex' : 'none';
+  }
+
+  if (DOM.btnClearFinishFilterDate) {
+    DOM.btnClearFinishFilterDate.style.display = (dateFilter || techFilter) ? 'inline-flex' : 'none';
+  }
+
+  // Filter rows
+  const filtered = rows.filter(item => {
+    if (dateFilter && item.tglLaporan !== dateFilter) return false;
+    if (techFilter && !item.nama.toUpperCase().includes(techFilter)) return false;
+    return true;
+  });
+
+  let totalOutdoorFinish = 0;
+  let totalIndoorFinish = 0;
+  let totalWipComp = 0;
+  let totalWipTech = 0;
+  let totalBatal = 0;
+
+  filtered.forEach(r => {
+    totalOutdoorFinish += r.finishOutdoor;
+    totalIndoorFinish += r.finishIndoor;
+    totalWipComp += r.wipComp;
+    totalWipTech += r.wipTech;
+    totalBatal += r.batal;
+  });
+
+  const now = new Date();
+  const MONTHS_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const monthLabel = `${MONTHS_ID[now.getMonth()]} ${now.getFullYear()}`;
+
+  if (DOM.finishAllSummary) {
+    DOM.finishAllSummary.innerHTML = `
+      <div style="background:var(--card-bg-light); border-left:3px solid var(--primary); padding:8px 10px; border-radius:6px; margin-bottom:8px;">
+        <div class="flex-between align-center">
+          <strong style="color:var(--text-color); font-size:12px;">📊 Total Laporan Bulan Ini (${monthLabel})</strong>
+          <span class="badge" style="background:var(--primary-light); color:var(--primary); font-size:11px; font-weight:700;">${filtered.length} Entry</span>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:4px; margin-top:6px; text-align:center; font-size:10px;">
+          <div style="background:var(--bg-input); padding:4px; border-radius:4px;"><span style="color:var(--text-muted); font-size:9px;">OUTDOOR</span><br/><strong style="color:var(--success);">${totalOutdoorFinish}</strong></div>
+          <div style="background:var(--bg-input); padding:4px; border-radius:4px;"><span style="color:var(--text-muted); font-size:9px;">INDOOR</span><br/><strong style="color:var(--primary);">${totalIndoorFinish}</strong></div>
+          <div style="background:var(--bg-input); padding:4px; border-radius:4px;"><span style="color:var(--text-muted); font-size:9px;">WIP COMP</span><br/><strong style="color:var(--warning);">${totalWipComp}</strong></div>
+          <div style="background:var(--bg-input); padding:4px; border-radius:4px;"><span style="color:var(--text-muted); font-size:9px;">WIP TECH</span><br/><strong style="color:var(--secondary);">${totalWipTech}</strong></div>
+          <div style="background:var(--bg-input); padding:4px; border-radius:4px;"><span style="color:var(--text-muted); font-size:9px;">BATAL</span><br/><strong style="color:var(--danger);">${totalBatal}</strong></div>
+        </div>
+      </div>`;
+  }
+
+  if (DOM.finishAllList) {
+    if (filtered.length === 0) {
+      DOM.finishAllList.innerHTML = `
+        <div style="text-align:center; padding:20px 10px; color:var(--text-muted);">
+          <i data-lucide="inbox" style="width:36px; height:36px; margin-bottom:6px;"></i>
+          <p style="font-weight:700; font-size:12px; margin:0;">Tidak Ada Data Laporan</p>
+          <span style="font-size:10.5px;">${dateFilter ? `Tidak ada laporan pada tanggal ${dateFilter}` : 'Belum ada laporan terdaftar untuk bulan ini.'}</span>
+        </div>`;
+    } else {
+      DOM.finishAllList.innerHTML = filtered.map(item => {
+        const parts = item.tglLaporan.split('-');
+        const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const formattedDate = formatDateIndoFull(dateObj);
+
+        return `
+          <div class="finish-data-card">
+            <div class="finish-data-header">
+              <div class="finish-data-tgl">
+                <i data-lucide="calendar" style="width:14px; height:14px; color:var(--primary);"></i>
+                ${escapeHtml(formattedDate)}
+              </div>
+              <span class="finish-data-tech">${escapeHtml(item.nama)}</span>
+            </div>
+            <div class="finish-stats-grid">
+              <div class="finish-stat-box"><label>Outdoor (Fin/Tgs)</label><strong>${item.finishOutdoor} / ${item.caseOutdoor}</strong></div>
+              <div class="finish-stat-box"><label>Indoor Finish</label><strong style="color:var(--primary);">${item.finishIndoor}</strong></div>
+              <div class="finish-stat-box"><label>WIP COMP</label><strong style="color:var(--warning);">${item.wipComp}</strong></div>
+              <div class="finish-stat-box"><label>WIP TECH</label><strong style="color:var(--secondary);">${item.wipTech}</strong></div>
+              <div class="finish-stat-box"><label>Batal</label><strong style="color:var(--danger);">${item.batal}</strong></div>
+              <div class="finish-stat-box"><label>Antar / No Visit</label><strong>${item.antar} / ${item.noVisit}</strong></div>
+            </div>
+            ${item.ket ? `<div style="margin-top:6px; font-size:10.5px; color:var(--text-muted); background:var(--bg-input); padding:4px 8px; border-radius:4px;"><i data-lucide="message-square" style="width:11px; height:11px; vertical-align:middle; margin-right:3px;"></i>${escapeHtml(item.ket)}</div>` : ''}
+            ${item.timestampCreated ? `<div style="margin-top:4px; font-size:9.5px; color:var(--text-muted); text-align:right;">Input: ${escapeHtml(item.timestampCreated)}</div>` : ''}
+          </div>`;
+      }).join('');
+    }
+  }
+
+  lucide.createIcons();
+}
+
+async function openMissingModal(isAutoRefresh = false, isManualRefresh = false) {
   if (!DOM.modalMissingFinish) return;
+
+  // Automatically set active page to Form Input Finish
+  switchTab('tab-finish');
+  if (DOM.finishPageForm) DOM.finishPageForm.style.display = 'block';
+  if (DOM.finishPageAll) DOM.finishPageAll.style.display = 'none';
 
   DOM.modalMissingFinish.classList.add('active');
 
-  if (DOM.syncIconMissing) DOM.syncIconMissing.classList.add('spinning');
+  if (!isAutoRefresh && !isManualRefresh) {
+    try {
+      history.pushState({ modal: 'missing_finish', tab: state.activeTab }, '', '#lihat-data');
+    } catch (e) {}
+  }
 
-  if (!isAutoRefresh && DOM.missingFinishSummary) {
+  const iconEl = document.getElementById('sync-icon-missing') || DOM.syncIconMissing;
+  if (iconEl) iconEl.classList.add('spinning');
+
+  // Show bottom loading spinner ONLY when opening for the first time (not auto-refresh & not manual refresh button click)
+  if (!isAutoRefresh && !isManualRefresh && DOM.missingFinishSummary) {
     DOM.missingFinishSummary.innerHTML = `
       <div style="text-align:center; padding:14px; color:var(--text-muted);">
         <i data-lucide="loader-2" class="spin-lg"></i>
-        <p style="margin-top:6px; font-size:12px; font-weight:600;">Memuat data terbaru dari Google Sheet...</p>
+        <p style="margin-top:6px; font-size:12px; font-weight:600;">Memuat data...</p>
       </div>`;
     lucide.createIcons();
   }
 
   try {
-    const filledDatesSet = await fetchFinishSheetData();
+    const { filledDatesSet, parsedAllRows } = await fetchFinishSheetData();
     renderMissingDatesList(filledDatesSet);
+    renderFinishAllDataTab(parsedAllRows);
   } catch (err) {
     console.warn('Error openMissingModal:', err);
   } finally {
-    if (DOM.syncIconMissing) DOM.syncIconMissing.classList.remove('spinning');
+    const activeIconEl = document.getElementById('sync-icon-missing') || DOM.syncIconMissing;
+    if (activeIconEl) activeIconEl.classList.remove('spinning');
   }
 
   startMissingAutoRefresh();
@@ -2818,16 +3290,28 @@ function renderMissingDatesList(filledDatesSet) {
   lucide.createIcons();
 }
 
-function closeMissingModal() {
+function closeMissingModal(triggerHistoryBack = true) {
   stopMissingAutoRefresh();
-  if (DOM.modalMissingFinish) DOM.modalMissingFinish.classList.remove('active');
+  if (DOM.modalMissingFinish) {
+    const wasActive = DOM.modalMissingFinish.classList.contains('active');
+    DOM.modalMissingFinish.classList.remove('active');
+    if (wasActive && triggerHistoryBack && history.state && history.state.modal === 'missing_finish') {
+      try { history.back(); } catch (e) {}
+    }
+  }
 }
 
 window.selectMissingDate = function(dateStr) {
   if (DOM.finishTgl) {
+    DOM.finishTgl.type = 'date';
     DOM.finishTgl.value = dateStr;
   }
   closeMissingModal();
+
+  switchTab('tab-finish');
+  if (DOM.finishPageForm) DOM.finishPageForm.style.display = 'block';
+  if (DOM.finishPageAll) DOM.finishPageAll.style.display = 'none';
+
   showToast(`📅 Tanggal ${dateStr} dipilih untuk diisi!`, 'info');
 };
 
@@ -2842,7 +3326,7 @@ async function handleSubmitFinish() {
   const caseBatal = (DOM.finishBatal && DOM.finishBatal.value.trim() !== '') ? DOM.finishBatal.value.trim() : '0';
   const pengembalian = (DOM.finishAntar && DOM.finishAntar.value.trim() !== '') ? DOM.finishAntar.value.trim() : '0';
   const noVisit = (DOM.finishNoVisit && DOM.finishNoVisit.value.trim() !== '') ? DOM.finishNoVisit.value.trim() : '0';
-  const ket = DOM.finishKet ? DOM.finishKet.value.trim() : '';
+  const ket = (DOM.finishKet && DOM.finishKet.value.trim() !== '') ? DOM.finishKet.value.trim() : '-';
 
   if (!tglVal) {
     showToast('⚠️ Mohon pilih tanggal laporan!', 'warning');
@@ -2895,29 +3379,6 @@ async function handleSubmitFinish() {
     console.warn('Submit error:', err);
   }
 
-  const entry = {
-    timestamp: new Date().toLocaleString('id-ID'),
-    nama: matchedNama,
-    tgl: tglVal,
-    outdoor: caseOutdoor,
-    finishOutdoor: finishOutdoor,
-    finishIndoor: finishIndoor,
-    wipComp: wipComp,
-    wipTech: wipTech,
-    batal: caseBatal,
-    antar: pengembalian,
-    noVisit: noVisit,
-    ket: ket
-  };
-
-  if (!state.finishHistory) state.finishHistory = [];
-  state.finishHistory.unshift(entry);
-
-  try {
-    localStorage.setItem(STORAGE_KEYS.FINISH_HISTORY, JSON.stringify(state.finishHistory));
-  } catch (e) {}
-
-  renderFinishHistory();
   prepareFinishForm();
 
   showToast('✅ Finish Harian berhasil dikirim ke Sheet!', 'success');
@@ -2999,7 +3460,33 @@ function cleanNameString(str) {
     .trim();
 }
 
+function isSameTechnicianName(sheetNama, targetNama) {
+  if (!sheetNama || !targetNama) return false;
+  const sUpper = String(sheetNama).trim().toUpperCase();
+  const tUpper = String(targetNama).trim().toUpperCase();
+  if (!sUpper || !tUpper) return false;
+  if (sUpper === 'ADMIN' || tUpper === 'ADMIN') return false;
+  if (sUpper === tUpper) return true;
+  if (sUpper.includes(tUpper) || tUpper.includes(sUpper)) return true;
+  const sWords = cleanNameString(sheetNama).split(' ').filter(w => w.length >= 2);
+  const tWords = cleanNameString(targetNama).split(' ').filter(w => w.length >= 2);
+  for (let tw of tWords) {
+    for (let sw of sWords) {
+      if (sw === tw) return true;
+    }
+  }
+  return false;
+}
+
 function matchTechName(sheetName, userName, userNik = '') {
+  const uUpper = (userName || '').toUpperCase().trim();
+  const nUpper = (userNik || '').toUpperCase().trim();
+
+  // If filter is empty ("") or user is admin (and not filtering for a specific technician name)
+  if (!uUpper && !nUpper) return true;
+  if (uUpper === 'ADMIN' || nUpper === 'ADMIN') return true;
+  if (state.isAdmin && (uUpper === (state.profile.nama || '').toUpperCase().trim() || uUpper === (state.profile.nik || '').toUpperCase().trim())) return true;
+
   if (!sheetName) return false;
 
   const sClean = cleanNameString(sheetName);
@@ -3078,51 +3565,48 @@ function saveSheetsCache() {
   }
 }
 
-async function fetchGVizSheet(sheetName) {
+async function fetchGVizSheet(sheetName, range = 'A1:Z1000', noHeaders = false) {
   // Use JSONP dynamic script injection to bypass CORS policy restrictions completely
-  try {
-    return await new Promise((resolve, reject) => {
-      const callbackName = 'gviz_cb_' + Math.floor(Math.random() * 1000000);
-      const timeout = setTimeout(() => {
-        if (window[callbackName]) delete window[callbackName];
-        const el = document.getElementById(callbackName);
-        if (el) el.remove();
-        reject(new Error(`Timeout fetching sheet ${sheetName}`));
-      }, 10000);
+  return new Promise((resolve, reject) => {
+    const callbackName = 'gviz_cb_' + Math.floor(Math.random() * 1000000);
 
-      window[callbackName] = function(response) {
-        clearTimeout(timeout);
-        delete window[callbackName];
-        const el = document.getElementById(callbackName);
-        if (el) el.remove();
-        if (response && response.table) {
-          resolve(response.table);
-        } else {
-          reject(new Error(`Response table invalid for sheet ${sheetName}`));
-        }
-      };
+    const cleanup = () => {
+      // Retain a dummy function so late responses do not throw Uncaught ReferenceError
+      window[callbackName] = function() {};
+      const el = document.getElementById(callbackName);
+      if (el) el.remove();
+      // Safely delete window[callbackName] after a 60-second grace period
+      setTimeout(() => {
+        try { delete window[callbackName]; } catch (e) {}
+      }, 60000);
+    };
 
-      const script = document.createElement('script');
-      script.id = callbackName;
-      script.src = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
-      script.onerror = function(err) {
-        clearTimeout(timeout);
-        if (window[callbackName]) delete window[callbackName];
-        script.remove();
-        reject(err);
-      };
-      document.body.appendChild(script);
-    });
-  } catch (jsonpErr) {
-    // Fallback to fetch API if JSONP fails
-    const url = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
-    const res = await fetch(url);
-    const text = await res.text();
-    const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?/);
-    if (!jsonMatch) throw new Error(`Format respon Google Sheet ${sheetName} tidak valid`);
-    const parsed = JSON.parse(jsonMatch[1]);
-    return parsed.table;
-  }
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timeout fetching sheet ${sheetName}`));
+    }, 25000);
+
+    window[callbackName] = function(response) {
+      clearTimeout(timeout);
+      cleanup();
+      if (response && response.table) {
+        resolve(response.table);
+      } else {
+        reject(new Error(`Response table invalid for sheet ${sheetName}`));
+      }
+    };
+
+    const script = document.createElement('script');
+    script.id = callbackName;
+    const headersParam = noHeaders ? '&headers=0' : '';
+    script.src = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&sheet=${encodeURIComponent(sheetName)}&range=${encodeURIComponent(range)}${headersParam}&t=${Date.now()}`;
+    script.onerror = function(err) {
+      clearTimeout(timeout);
+      cleanup();
+      reject(new Error(`Script load error for sheet ${sheetName}`));
+    };
+    document.body.appendChild(script);
+  });
 }
 
 function extractMatrixFromGViz(table) {
@@ -3145,32 +3629,76 @@ async function fetchGoogleSheetsData() {
   if (DOM.syncIcon) DOM.syncIcon.classList.add('spinning');
 
   try {
-    const [tableData, tableNotif] = await Promise.all([
-      fetchGVizSheet('DATA'),
-      fetchGVizSheet('NOTIF')
+    const [tableData, tableAcAl, tableNotif] = await Promise.all([
+      fetchGVizSheet('DATA', 'A1:Z1000'),
+      fetchGVizSheet('DATA', 'AC1:AL1000', true),
+      fetchGVizSheet('NOTIF', 'A1:J1000')
     ]);
 
     const rowsData = extractMatrixFromGViz(tableData);
+    const rowsAcAl = extractMatrixFromGViz(tableAcAl);
     const rowsNotif = extractMatrixFromGViz(tableNotif);
 
     const techName = state.profile.nama || '';
     const techNik = state.profile.nik || '';
 
-    // 1. Timestamp Z2 (Col index 25, Row index 1 = cell Z2)
-    let lastUpdateStr = '';
-    if (rowsData.length > 1 && rowsData[1][25]) {
-      lastUpdateStr = rowsData[1][25];
-    } else if (rowsData.length > 0 && rowsData[0][25]) {
-      lastUpdateStr = rowsData[0][25];
+    // 1. Timestamps
+    // 1a. Pending Timestamp (Cell Z2 / AG2 in sheet DATA)
+    let pendingTimestamp = '';
+    if (rowsAcAl && rowsAcAl.length >= 2 && rowsAcAl[1].length > 4) {
+      const val = (rowsAcAl[1][4] || '').trim();
+      if (val && val.length > 2 && !val.toUpperCase().startsWith('PART') && !val.toUpperCase().startsWith('NO')) {
+        pendingTimestamp = val;
+      }
     }
-    
-    if (!lastUpdateStr || lastUpdateStr.length < 3) {
-      const now = new Date();
-      lastUpdateStr = now.toLocaleDateString('id-ID') + ' ' + now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    if ((!pendingTimestamp || pendingTimestamp.length < 3) && rowsData && rowsData.length >= 2) {
+      if (rowsData[1].length > 25 && rowsData[1][25]) {
+        pendingTimestamp = (rowsData[1][25] || '').trim();
+      }
     }
+    if (!pendingTimestamp || pendingTimestamp.length < 3) {
+      if (tableData && tableData.rows) {
+        for (let r = 0; r < tableData.rows.length; r++) {
+          const row = tableData.rows[r];
+          if (row && row.c) {
+            for (let c = 0; c < row.c.length; c++) {
+              if (row.c[c]) {
+                const val = (row.c[c].v || row.c[c].f || '').toString().trim();
+                if (val && val.toUpperCase().startsWith('UPDATE DATA')) {
+                  pendingTimestamp = val;
+                  break;
+                }
+              }
+            }
+            if (pendingTimestamp) break;
+          }
+        }
+      }
+    }
+    if (!pendingTimestamp || pendingTimestamp.length < 3) pendingTimestamp = 'Memuat data....';
+
+    // 1b. Performa Timestamp (Cell AG3 -> row index 2, col index 4 of AC1:AL1000)
+    let performaTimestamp = '';
+    if (rowsAcAl && rowsAcAl.length >= 3 && rowsAcAl[2].length > 4) {
+      performaTimestamp = (rowsAcAl[2][4] || '').trim();
+    }
+    if (!performaTimestamp || performaTimestamp.length < 3) performaTimestamp = pendingTimestamp;
+
+    // 1c. Part Bekas Belum Kembali Timestamp (Cell AG5 -> row index 4, col index 4 of AC1:AL1000)
+    let partKembaliTimestamp = '';
+    if (rowsAcAl && rowsAcAl.length >= 5 && rowsAcAl[4].length > 4) {
+      partKembaliTimestamp = (rowsAcAl[4][4] || '').trim();
+    }
+    if (!partKembaliTimestamp || partKembaliTimestamp.length < 3) partKembaliTimestamp = pendingTimestamp;
+
+    // 1d. Tagihan Timestamp (Cell AG6 -> row index 5, col index 4 of AC1:AL1000)
+    let tagihanTimestamp = '';
+    if (rowsAcAl && rowsAcAl.length >= 6 && rowsAcAl[5].length > 4) {
+      tagihanTimestamp = (rowsAcAl[5][4] || '').trim();
+    }
+    if (!tagihanTimestamp || tagihanTimestamp.length < 3) tagihanTimestamp = pendingTimestamp;
 
     // 2. Pending Cases (Cols A-J, indices 0-9, Row 1+)
-    // Col 0: TGL, 1: NO SCL, 2: TYPE, 3: SERI, 4: LAYANAN, 5: STOK IN, 6: STATUS, 7: TEKNISI (COL H), 8: KET PART, 9: USIA
     const pendingCases = [];
     for (let r = 0; r < rowsData.length; r++) {
       const row = rowsData[r];
@@ -3193,7 +3721,6 @@ async function fetchGoogleSheetsData() {
     }
 
     // 3. Insentif Rows (Cols K-V, indices 10-21, Row 1+)
-    // 10: NAMA (COL K), 11: NIK, 12: JOB, 13: MULTI, 14: INDOOR, 15: OUTDOOR, 16: AC, 17: EV1, 18: EV2, 19: EV3, 20: KONVERSI (COL U), 21: INSENTIF (COL V)
     const insentifRows = [];
     for (let r = 0; r < rowsData.length; r++) {
       const row = rowsData[r];
@@ -3221,7 +3748,6 @@ async function fetchGoogleSheetsData() {
     }
 
     // 4. Rata-Rata & Selisih Unit (Cols W-Y, indices 22-24, Row 1+)
-    // 22: NAMA (COL W), 23: RATA-RATA, 24: SELISIH UNIT
     const rata2Rows = [];
     for (let r = 0; r < rowsData.length; r++) {
       const row = rowsData[r];
@@ -3255,7 +3781,6 @@ async function fetchGoogleSheetsData() {
     }
 
     // 6. Notifications (Sheet NOTIF, Cols A-J, indices 0-9)
-    // 0: NO SCL, 1: TYPE, 2: SERI, 3: LAYANAN, 4: STOK IN, 5: STATUS, 6: TEKNISI, 7: KET PART, 8: USIA, 9: NOTES
     const notifications = [];
     for (let r = 0; r < rowsNotif.length; r++) {
       const row = rowsNotif[r];
@@ -3277,15 +3802,61 @@ async function fetchGoogleSheetsData() {
       }
     }
 
+    // 7. Part Bekas (Sheet DATA, Range AC-AF, indices 0-3 of rowsAcAl)
+    const partBelumKembali = [];
+    for (let r = 0; r < rowsAcAl.length; r++) {
+      const row = rowsAcAl[r];
+      if (!row || row.length < 3) continue;
+      const noGudang = (row[0] || '').trim();
+      const qtyVal = (row[1] || '').trim();
+      const techNameRow = (row[2] || '').trim();
+      const noReservasi = (row[3] || '').trim();
+
+      if (noGudang && noGudang.toUpperCase() !== 'PART' && techNameRow && matchTechName(techNameRow, techName, techNik)) {
+        partBelumKembali.push({
+          noGudang: noGudang,
+          qty: qtyVal || '1',
+          teknisi: techNameRow,
+          noReservasi: (noReservasi && noReservasi.toUpperCase() !== 'NONE') ? noReservasi : ''
+        });
+      }
+    }
+
+    // 8. Tagihan Rows (Sheet DATA, Range AI-AL, indices 6-9 of rowsAcAl)
+    const tagihanRows = [];
+    for (let r = 0; r < rowsAcAl.length; r++) {
+      const row = rowsAcAl[r];
+      if (!row || row.length < 8) continue;
+      const noInvoice = (row[6] || '').trim();
+      const techNameRow = (row[7] || '').trim();
+      const jumlahVal = (row[8] || '').trim();
+      const namaKonsumen = (row[9] || '').trim();
+
+      if (noInvoice && noInvoice.toUpperCase() !== 'NO INVOICE' && techNameRow && matchTechName(techNameRow, techName, techNik)) {
+        tagihanRows.push({
+          noInvoice: noInvoice,
+          teknisi: techNameRow,
+          jumlah: jumlahVal || '0',
+          namaKonsumen: namaKonsumen || '-'
+        });
+      }
+    }
+
     // Update state & single source of truth cache
     state.sheetsData = {
-      lastUpdateTimestamp: lastUpdateStr,
+      lastUpdateTimestamp: pendingTimestamp,
+      pendingTimestamp,
+      performaTimestamp,
+      partKembaliTimestamp,
+      tagihanTimestamp,
       lastSyncTime: Date.now(),
       pendingCases,
       insentifRows,
       rata2Rows,
       outputHariIni,
-      notifications
+      notifications,
+      partBelumKembali,
+      tagihanRows
     };
 
     saveSheetsCache();
@@ -3317,12 +3888,25 @@ function renderAllSheetsViews() {
   renderPendingTab();
   renderPerformaTab();
   renderNotifTab();
+  renderPartKembaliTab();
+  renderTagihanTab();
   updateBadges();
 }
 
 function renderSheetUpdateInfo() {
+  const baseTs = (typeof window !== 'undefined' && window.__INIT_SHEET_TS__) ? window.__INIT_SHEET_TS__ : '';
+  const pendingTs = state.sheetsData.pendingTimestamp || state.sheetsData.lastUpdateTimestamp || baseTs || 'Memuat data....';
+  const performaTs = state.sheetsData.performaTimestamp || pendingTs;
+  const partKembaliTs = state.sheetsData.partKembaliTimestamp || pendingTs;
+  const tagihanTs = state.sheetsData.tagihanTimestamp || pendingTs;
+
+  let activeTs = pendingTs;
+  if (state.activeTab === 'tab-performa') activeTs = performaTs;
+  else if (state.activeTab === 'tab-part-kembali') activeTs = partKembaliTs;
+  else if (state.activeTab === 'tab-tagihan') activeTs = tagihanTs;
+
   if (DOM.sheetZ2Timestamp) {
-    DOM.sheetZ2Timestamp.textContent = state.sheetsData.lastUpdateTimestamp || 'Live System';
+    DOM.sheetZ2Timestamp.textContent = activeTs;
   }
 }
 
@@ -3552,6 +4136,131 @@ function renderNotifTab() {
       </div>
       ${item.ket_part ? `<div style="font-size:10px;color:var(--warning);font-weight:600;"><i data-lucide="info" style="width:11px;height:11px;display:inline;"></i> ${item.ket_part}</div>` : ''}
     </div>`).join('');
+
+  lucide.createIcons();
+}
+
+function renderPartKembaliTab() {
+  if (!DOM.partKembaliListContainer) return;
+  const list = state.sheetsData.partBelumKembali || [];
+  const searchQ = (state.partKembaliSearchQuery || '').trim().toUpperCase();
+
+  const filtered = list.filter(item => {
+    if (!searchQ) return true;
+    return (
+      (item.noGudang || '').toUpperCase().includes(searchQ) ||
+      (item.noReservasi || '').toUpperCase().includes(searchQ)
+    );
+  });
+
+  const totalQty = filtered.reduce((acc, item) => {
+    const q = parseFloat(item.qty) || 1;
+    return acc + q;
+  }, 0);
+
+  if (DOM.partKembaliTotalQty) {
+    DOM.partKembaliTotalQty.textContent = `${totalQty} Pcs`;
+  }
+  if (DOM.partKembaliCount) {
+    DOM.partKembaliCount.textContent = `${filtered.length} Item`;
+  }
+
+  if (filtered.length === 0) {
+    DOM.partKembaliListContainer.innerHTML = `
+      <div class="empty-state-sm" style="padding: 24px 10px;">
+        <i data-lucide="package-open" style="width:36px; height:36px; color:var(--text-muted);"></i>
+        <p style="font-weight:600; color:var(--text-muted); margin-top:4px;">${searchQ ? 'Tidak ada part yang cocok dengan pencarian.' : 'Tidak ada Part Bekas untuk Anda.'}</p>
+        <span style="font-size:10.5px; color:var(--text-dark);">Semua part bekas telah diproses.</span>
+      </div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  DOM.partKembaliListContainer.innerHTML = filtered.map(item => `
+    <div class="card-item-part-kembali" style="background:var(--bg-input); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px 12px; display:flex; flex-direction:column; gap:4px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+          <div style="width:30px; height:30px; border-radius:var(--radius-sm); background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i data-lucide="package" style="width:15px; height:15px;"></i>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:800; color:var(--text-main); word-break:break-all;">${escapeHtml(item.noGudang)}</div>
+          </div>
+        </div>
+        <div style="flex-shrink:0;">
+          <span style="font-size:11.5px; font-weight:800; color:var(--primary); background:rgba(16, 185, 129, 0.15); padding:3px 8px; border-radius:var(--radius-sm); border:1px solid rgba(16, 185, 129, 0.3); display:inline-block;">
+            Qty: ${escapeHtml(item.qty)}
+          </span>
+        </div>
+      </div>
+      ${item.noReservasi ? `
+      <div style="font-size:10.5px; color:var(--primary); font-weight:700; word-break:break-all; padding-left:40px; margin-top:1px;">
+        <i data-lucide="bookmark" style="width:10.5px;height:10.5px;display:inline;"></i> ${escapeHtml(item.noReservasi)}
+      </div>` : ''}
+    </div>
+  `).join('');
+
+  lucide.createIcons();
+}
+
+function renderTagihanTab() {
+  if (!DOM.tagihanListContainer) return;
+  const list = state.sheetsData.tagihanRows || [];
+  const searchQ = (state.tagihanSearchQuery || '').trim().toUpperCase();
+
+  const filtered = list.filter(item => {
+    if (!searchQ) return true;
+    return (
+      (item.noInvoice || '').toUpperCase().includes(searchQ) ||
+      (item.namaKonsumen || '').toUpperCase().includes(searchQ) ||
+      (item.jumlah || '').toString().includes(searchQ)
+    );
+  });
+
+  const totalJumlah = filtered.reduce((acc, item) => {
+    let cleanVal = String(item.jumlah).replace(/[^0-9.-]/g, '');
+    const parsed = parseFloat(cleanVal) || 0;
+    return acc + parsed;
+  }, 0);
+
+  if (DOM.tagihanTotalJumlah) {
+    DOM.tagihanTotalJumlah.textContent = formatRupiah(totalJumlah);
+  }
+  if (DOM.tagihanCount) {
+    DOM.tagihanCount.textContent = `${filtered.length} Invoice`;
+  }
+
+  if (filtered.length === 0) {
+    DOM.tagihanListContainer.innerHTML = `
+      <div class="empty-state-sm" style="padding: 24px 10px;">
+        <i data-lucide="receipt" style="width:36px; height:36px; color:var(--text-muted);"></i>
+        <p style="font-weight:600; color:var(--text-muted); margin-top:4px;">${searchQ ? 'Tidak ada tagihan yang cocok dengan pencarian.' : 'Tidak ada Tagihan untuk Anda.'}</p>
+        <span style="font-size:10.5px; color:var(--text-dark);">Semua invoice tagihan telah diproses.</span>
+      </div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  DOM.tagihanListContainer.innerHTML = filtered.map(item => `
+    <div class="card-item-tagihan" style="background:var(--bg-input); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+      <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+        <div style="width:34px; height:34px; border-radius:var(--radius-sm); background:rgba(245, 158, 11, 0.15); color:var(--warning); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <i data-lucide="file-text" style="width:18px; height:18px;"></i>
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:10.5px; font-weight:700; color:var(--text-main); word-break:break-all;">${escapeHtml(item.noInvoice)}</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">
+            <i data-lucide="user" style="width:11px; height:11px; display:inline;"></i> Konsumen: <strong style="color:var(--text-main);">${escapeHtml(item.namaKonsumen)}</strong>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; flex-shrink:0;">
+        <span style="font-size:12px; font-weight:800; color:var(--warning); background:rgba(245, 158, 11, 0.15); padding:5px 10px; border-radius:var(--radius-sm); border:1px solid rgba(245, 158, 11, 0.3);">
+          ${formatRupiah(item.jumlah)}
+        </span>
+      </div>
+    </div>
+  `).join('');
 
   lucide.createIcons();
 }
