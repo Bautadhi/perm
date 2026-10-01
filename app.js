@@ -7,6 +7,9 @@ const SUPABASE_CONFIG = {
   table: 'transaksi_part'
 };
 
+const APPS_SCRIPT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwaDyJgzNp7OfhMWDORfGdwyuMVjgamTULd_ulfsw16xWsGXCo2mKA12-5TPY_PagcA1A/exec';
+const GOOGLE_SHEET_ID = '1x6m_pQ_UUPMGUE5iGraaurOivSDmsJ7CKCr42rNWlBc';
+
 const STORAGE_KEYS = {
   PROFILE: 'teknisi_profile_data',
   HISTORY: 'teknisi_scan_history',
@@ -67,7 +70,8 @@ let state = {
     outputHariIni: [],
     notifications: [],
     partBelumKembali: [],
-    tagihanRows: []
+    tagihanRows: [],
+    pdsRows: []
   },
   sheetsPollTimer: null,
   isFetchingSheets: false,
@@ -111,6 +115,8 @@ const DOM = {
   headerPswStatus: document.getElementById('header-psw-status'),
   headerPswText: document.getElementById('header-psw-text'),
   headerBtnMissing: document.getElementById('header-btn-missing'),
+  headerBtnUsers: document.getElementById('header-btn-users'),
+  headerBtnProfile: document.getElementById('header-btn-profile'),
   headerNotifBtn: document.getElementById('header-notif-btn'),
   headerBellBadge: document.getElementById('header-bell-badge'),
   sheetUpdateBar: document.getElementById('sheet-update-bar'),
@@ -123,6 +129,13 @@ const DOM = {
   btnSelectModeTeknisi: document.getElementById('btn-select-mode-teknisi'),
   btnSelectModePipo: document.getElementById('btn-select-mode-pipo'),
   btnSelectModeFinish: document.getElementById('btn-select-mode-finish'),
+  btnSelectModePds: document.getElementById('btn-select-mode-pds'),
+
+  // Pencapaian PDS Elements
+  pdsContentContainer: document.getElementById('pds-content-container'),
+  btnRefreshPds: document.getElementById('btn-refresh-pds'),
+  syncIconPds: document.getElementById('sync-icon-pds'),
+  pdsSiteCount: document.getElementById('pds-site-count'),
 
   // Part Pengganti (PIPO) Controls
   inputSearchPipo: document.getElementById('input-search-pipo'),
@@ -248,10 +261,13 @@ const DOM = {
   btnSaveProfile: document.getElementById('btn-save-profile'),
   btnTogglePswVisibility: document.getElementById('btn-toggle-psw-visibility'),
   pswEyeIcon: document.getElementById('psw-eye-icon'),
+  btnClearAppCache: document.getElementById('btn-clear-app-cache'),
   
   // History
   historyList: document.getElementById('history-list'),
   btnClearHistory: document.getElementById('btn-clear-history'),
+  btnRefreshHistory: document.getElementById('btn-refresh-history'),
+  syncIconHistory: document.getElementById('sync-icon-history'),
 
   // Admin User Management & App Settings
   adminTransferStokToggle: document.getElementById('admin-transfer-stok-toggle'),
@@ -343,12 +359,35 @@ function initSupabaseClient() {
     try {
       state.supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.key);
       console.log('Client Supabase berhasil diinisialisasi:', SUPABASE_CONFIG.url);
+      startSupabaseKeepAlive();
     } catch (err) {
       console.error('Gagal inisialisasi Supabase:', err);
       state.supabaseClient = null;
     }
   } else {
     state.supabaseClient = null;
+  }
+}
+
+function startSupabaseKeepAlive() {
+  if (!state.supabaseClient) return;
+
+  const ping = async () => {
+    try {
+      const { error } = await state.supabaseClient
+        .from('app_settings')
+        .select('setting_key')
+        .limit(1);
+      if (!error) {
+        console.log('⚡ [SUPABASE KEEPALIVE] Heartbeat OK:', new Date().toLocaleTimeString());
+      }
+    } catch (e) {}
+  };
+
+  ping();
+
+  if (!window.__supabaseKeepAliveInterval) {
+    window.__supabaseKeepAliveInterval = setInterval(ping, 300000); // 5 menit
   }
 }
 
@@ -395,6 +434,7 @@ function showLoginScreen() {
   state.isLoggedIn = false;
   state.isAdmin = false;
   document.documentElement.classList.remove('is-logged-in');
+  document.documentElement.classList.remove('is-admin');
   DOM.screenLogin.classList.add('active');
   DOM.screenApp.classList.remove('active');
   stopScanner();
@@ -414,13 +454,15 @@ function showLoginScreen() {
 
 function showAppScreen() {
   document.documentElement.classList.add('is-logged-in');
+  document.documentElement.classList.toggle('is-admin', !!state.isAdmin);
   DOM.screenLogin.classList.remove('active');
   DOM.screenApp.classList.add('active');
 
   const hashTab = window.location.hash ? window.location.hash.replace('#', '') : '';
   const savedTab = localStorage.getItem(STORAGE_KEYS.LAST_TAB);
 
-  const validTabs = ['tab-menu', 'tab-scan', 'tab-history', 'tab-pending', 'tab-performa', 'tab-notif', 'tab-part-kembali', 'tab-tagihan', 'tab-pipo', 'tab-finish', 'tab-finish-all', 'tab-profile'];
+  const validTabs = ['tab-menu', 'tab-scan', 'tab-history', 'tab-pending', 'tab-performa', 'tab-notif', 'tab-part-kembali', 'tab-tagihan', 'tab-pipo', 'tab-finish', 'tab-finish-all', 'tab-profile', 'tab-pencapaian-pds'];
+  if (state.isAdmin) validTabs.push('tab-users');
   let initialTab = 'tab-menu';
 
   if (hashTab && validTabs.includes(hashTab)) {
@@ -666,16 +708,32 @@ function updateUIFromState() {
   DOM.profDispNama.textContent = state.profile.nama || 'Teknisi Anonim';
   DOM.profDispNik.textContent = `NIK: ${state.profile.nik || '-'}`;
 
-  // Update Profile Form Fields
-  DOM.profileNama.value = state.profile.nama || '';
-  DOM.profileNik.value = state.profile.nik || '';
-  DOM.profilePsw.value = state.profile.psw || '';
-  DOM.profilePswToggle.checked = !!state.profile.usePsw;
+  // Update Profile Form Fields (Read-Only)
+  if (DOM.profileNama) {
+    DOM.profileNama.value = state.profile.nama || '';
+    DOM.profileNama.readOnly = true;
+  }
+  if (DOM.profileNik) {
+    DOM.profileNik.value = state.profile.nik || '';
+    DOM.profileNik.readOnly = true;
+  }
+  if (DOM.profilePsw) {
+    DOM.profilePsw.value = state.profile.psw || '';
+    DOM.profilePsw.readOnly = true;
+  }
+  if (DOM.profilePswToggle) {
+    DOM.profilePswToggle.checked = !!state.profile.usePsw;
+    DOM.profilePswToggle.disabled = true;
+  }
 
-  // Toggle Admin Nav Item & Fetch Admin Users
+  // Toggle Admin Nav Item & Header User Setting Button & Fetch Admin Users
   if (DOM.navItemUsers) {
     DOM.navItemUsers.classList.toggle('hidden', !state.isAdmin);
   }
+  if (DOM.headerBtnUsers) {
+    DOM.headerBtnUsers.classList.toggle('hidden', !state.isAdmin);
+  }
+  document.documentElement.classList.toggle('is-admin', !!state.isAdmin);
 
   if (state.isAdmin) {
     fetchAdminUsersList();
@@ -695,20 +753,44 @@ function updateUIFromState() {
 // ==========================================
 function setupEventListeners() {
   // Theme Buttons
-  DOM.btnThemeDark.addEventListener('click', () => applyTheme('dark'));
-  DOM.btnThemeLight.addEventListener('click', () => applyTheme('light'));
+  if (DOM.btnThemeDark) DOM.btnThemeDark.addEventListener('click', () => applyTheme('dark'));
+  if (DOM.btnThemeLight) DOM.btnThemeLight.addEventListener('click', () => applyTheme('light'));
 
   // Login Password Eye Toggle
-  DOM.btnLoginPswToggle.addEventListener('click', () => {
-    const isPsw = DOM.loginPassword.type === 'password';
-    DOM.loginPassword.type = isPsw ? 'text' : 'password';
-  });
+  if (DOM.btnLoginPswToggle) {
+    DOM.btnLoginPswToggle.addEventListener('click', () => {
+      const isPsw = DOM.loginPassword.type === 'password';
+      DOM.loginPassword.type = isPsw ? 'text' : 'password';
+    });
+  }
 
-  // Login Submit Buttons
-  DOM.btnDoLogin.addEventListener('click', handleLogin);
+  // Login Submit & Enter Key Listeners
+  if (DOM.btnDoLogin) DOM.btnDoLogin.addEventListener('click', handleLogin);
+  if (DOM.formLogin) {
+    DOM.formLogin.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleLogin();
+    });
+  }
+  if (DOM.loginUsername) {
+    DOM.loginUsername.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLogin();
+      }
+    });
+  }
+  if (DOM.loginPassword) {
+    DOM.loginPassword.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLogin();
+      }
+    });
+  }
 
   // Logout Button
-  DOM.btnLogout.addEventListener('click', handleLogout);
+  if (DOM.btnLogout) DOM.btnLogout.addEventListener('click', handleLogout);
 
   // Mode Hub Cards Click Listeners
   if (DOM.btnSelectModeScan) {
@@ -807,6 +889,16 @@ function setupEventListeners() {
   if (DOM.btnSelectModeFinish) {
     DOM.btnSelectModeFinish.addEventListener('click', () => {
       requestTabSwitch('tab-finish');
+    });
+  }
+  if (DOM.btnSelectModePds) {
+    DOM.btnSelectModePds.addEventListener('click', () => {
+      requestTabSwitch('tab-pencapaian-pds');
+    });
+  }
+  if (DOM.btnRefreshPds) {
+    DOM.btnRefreshPds.addEventListener('click', () => {
+      fetchGoogleSheetsData();
     });
   }
   if (DOM.btnSelectModePartKembali) {
@@ -1023,40 +1115,76 @@ function setupEventListeners() {
   }
 
   // Camera Scanner Buttons
-  DOM.btnToggleCamera.addEventListener('click', toggleScanner);
+  if (DOM.btnToggleCamera) DOM.btnToggleCamera.addEventListener('click', toggleScanner);
   if (DOM.btnToggleTorch) DOM.btnToggleTorch.addEventListener('click', toggleTorch);
   if (DOM.btnSimulasiScan) DOM.btnSimulasiScan.addEventListener('click', simulateScan);
 
   // Manual Add Line
-  DOM.btnAddManual.addEventListener('click', handleAddManualItem);
-  DOM.inputNoGudang.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleAddManualItem();
-  });
+  if (DOM.btnAddManual) DOM.btnAddManual.addEventListener('click', handleAddManualItem);
+  if (DOM.inputNoGudang) {
+    DOM.inputNoGudang.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleAddManualItem();
+    });
+  }
 
-  DOM.btnClearGudang.addEventListener('click', () => {
-    DOM.inputNoGudang.value = '';
-    DOM.inputNoGudang.focus();
-  });
+  if (DOM.btnClearGudang) {
+    DOM.btnClearGudang.addEventListener('click', () => {
+      if (DOM.inputNoGudang) {
+        DOM.inputNoGudang.value = '';
+        DOM.inputNoGudang.focus();
+      }
+    });
+  }
 
   // Submit Button Triggers Centered Confirmation Modal Popup
-  DOM.btnSubmit.addEventListener('click', openSubmitConfirmModal);
+  if (DOM.btnSubmit) DOM.btnSubmit.addEventListener('click', openSubmitConfirmModal);
   if (DOM.btnModalClose) DOM.btnModalClose.addEventListener('click', closeSubmitConfirmModal);
-  DOM.btnConfirmCancel.addEventListener('click', closeSubmitConfirmModal);
-  DOM.btnConfirmOk.addEventListener('click', handleConfirmModalOk);
+  if (DOM.btnConfirmCancel) DOM.btnConfirmCancel.addEventListener('click', closeSubmitConfirmModal);
+  if (DOM.btnConfirmOk) DOM.btnConfirmOk.addEventListener('click', handleConfirmModalOk);
+
+  // Header Action Buttons (Profile & Admin User Settings)
+  if (DOM.headerBtnProfile) {
+    DOM.headerBtnProfile.addEventListener('click', () => switchTab('tab-profile'));
+  }
+  if (DOM.headerBtnUsers) {
+    DOM.headerBtnUsers.addEventListener('click', () => switchTab('tab-users'));
+  }
 
   // Profile Save & Header PSW Badge Click Toggle
   if (DOM.headerPswStatus) DOM.headerPswStatus.addEventListener('click', handleHeaderPswToggle);
-  DOM.btnSaveProfile.addEventListener('click', handleSaveProfileRealtime);
-  DOM.profilePswToggle.addEventListener('change', handleTogglePasswordRealtime);
+  if (DOM.btnSaveProfile) DOM.btnSaveProfile.addEventListener('click', handleSaveProfileRealtime);
+  if (DOM.profilePswToggle) DOM.profilePswToggle.addEventListener('change', handleTogglePasswordRealtime);
 
   // Password Visibility Toggle in Profile
-  DOM.btnTogglePswVisibility.addEventListener('click', () => {
-    const isPsw = DOM.profilePsw.type === 'password';
-    DOM.profilePsw.type = isPsw ? 'text' : 'password';
-  });
+  if (DOM.btnTogglePswVisibility) {
+    DOM.btnTogglePswVisibility.addEventListener('click', () => {
+      if (DOM.profilePsw) {
+        const isPsw = DOM.profilePsw.type === 'password';
+        DOM.profilePsw.type = isPsw ? 'text' : 'password';
+      }
+    });
+  }
 
-  // Clear History
-  DOM.btnClearHistory.addEventListener('click', openClearHistoryConfirmModal);
+  // Clear App Cache Button
+  if (DOM.btnClearAppCache) {
+    DOM.btnClearAppCache.addEventListener('click', handleClearAppCache);
+  }
+
+  // Clear & Refresh History
+  if (DOM.btnClearHistory) DOM.btnClearHistory.addEventListener('click', openClearHistoryConfirmModal);
+  if (DOM.btnRefreshHistory) {
+    DOM.btnRefreshHistory.addEventListener('click', async () => {
+      const activeIcon = document.getElementById('sync-icon-history') || DOM.syncIconHistory;
+      if (activeIcon) activeIcon.classList.add('spinning');
+      showToast('🔄 Memperbarui riwayat...', 'info');
+      try {
+        await renderHistory();
+      } finally {
+        const icon = document.getElementById('sync-icon-history') || DOM.syncIconHistory;
+        if (icon) icon.classList.remove('spinning');
+      }
+    });
+  }
 
   // Admin User Management Listeners
   if (DOM.btnOpenAddUser) DOM.btnOpenAddUser.addEventListener('click', openAddUserModal);
@@ -1218,6 +1346,16 @@ function openClearHistoryConfirmModal() {
   lucide.createIcons();
 }
 
+function openClearCacheConfirmModal() {
+  state.modalAction = 'clearCache';
+
+  DOM.modalConfirmTitle.innerHTML = `<i data-lucide="trash-2"></i> Konfirmasi Hapus Cache`;
+  DOM.modalConfirmMsg.textContent = 'Apakah Anda Yakin Ingin Menghapus Seluruh Cache Data Aplikasi? Halaman akan dimuat ulang.';
+  DOM.modalConfirmOkText.textContent = 'Ya, Hapus Cache';
+  DOM.modalConfirm.classList.add('active');
+  lucide.createIcons();
+}
+
 function closeSubmitConfirmModal() {
   DOM.modalConfirm.classList.remove('active');
 }
@@ -1234,6 +1372,8 @@ async function handleConfirmModalOk() {
     performLogout();
   } else if (currentAction === 'clearHistory') {
     performClearHistory();
+  } else if (currentAction === 'clearCache') {
+    executeClearAppCache();
   } else if (currentAction === 'deleteUser') {
     await performDeleteUser();
   } else if (currentAction === 'deleteDraftItem') {
@@ -1261,10 +1401,10 @@ async function handleConfirmModalOk() {
 // Handle Save Profile (Nama, NIK, Password) -> Realtime Supabase Update
 async function handleSaveProfileRealtime() {
   const oldNik = state.profile.nik;
-  const newNama = DOM.profileNama.value.trim();
-  const newNik = DOM.profileNik.value.trim();
-  const newPsw = DOM.profilePsw.value.trim();
-  const newUsePsw = DOM.profilePswToggle.checked;
+  const newNama = DOM.profileNama ? DOM.profileNama.value.trim() : '';
+  const newNik = DOM.profileNik ? DOM.profileNik.value.trim() : '';
+  const newPsw = DOM.profilePsw ? DOM.profilePsw.value.trim() : '';
+  const newUsePsw = DOM.profilePswToggle ? DOM.profilePswToggle.checked : state.profile.usePsw;
 
   if (!newNama) {
     showToast('Nama Teknisi tidak boleh kosong!', 'error');
@@ -1277,9 +1417,11 @@ async function handleSaveProfileRealtime() {
     return;
   }
 
-  DOM.btnSaveProfile.disabled = true;
-  DOM.btnSaveProfile.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Memperbarui...`;
-  lucide.createIcons();
+  if (DOM.btnSaveProfile) {
+    DOM.btnSaveProfile.disabled = true;
+    DOM.btnSaveProfile.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Memperbarui...`;
+    lucide.createIcons();
+  }
 
   try {
     if (state.supabaseClient) {
@@ -1334,9 +1476,11 @@ async function handleSaveProfileRealtime() {
     console.error('Error Update Profil:', err);
     showToast(`Gagal simpan profil: ${err.message}`, 'error');
   } finally {
-    DOM.btnSaveProfile.disabled = false;
-    DOM.btnSaveProfile.innerHTML = `<i data-lucide="save"></i> Simpan Profil & Pengaturan`;
-    lucide.createIcons();
+    if (DOM.btnSaveProfile) {
+      DOM.btnSaveProfile.disabled = false;
+      DOM.btnSaveProfile.innerHTML = `<i data-lucide="save"></i> Simpan Profil & Pengaturan`;
+      lucide.createIcons();
+    }
   }
 }
 
@@ -1376,6 +1520,7 @@ async function handleHeaderPswToggle() {
 }
 
 async function handleTogglePasswordRealtime() {
+  if (!DOM.profilePswToggle) return;
   const newUsePsw = DOM.profilePswToggle.checked;
   if (state.profile.usePsw === newUsePsw) return;
 
@@ -1402,6 +1547,36 @@ async function handleTogglePasswordRealtime() {
     } catch (err) {
       showToast(`Gagal update status password: ${err.message}`, 'error');
     }
+  }
+}
+
+function handleClearAppCache() {
+  openClearCacheConfirmModal();
+}
+
+async function executeClearAppCache() {
+  try {
+    showToast('🧹 Membersihkan cache data...', 'info');
+
+    localStorage.removeItem(STORAGE_KEYS.SHEETS_CACHE);
+    localStorage.removeItem(STORAGE_KEYS.PIPO_CACHE);
+    localStorage.removeItem(STORAGE_KEYS.FINISH_SHEET_CACHE);
+
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+    }
+
+    showToast('✅ Cache berhasil dibersihkan! Memuat ulang...', 'success');
+    setTimeout(() => {
+      window.location.reload();
+    }, 700);
+  } catch (err) {
+    console.error('Clear cache error:', err);
+    showToast('Memuat ulang aplikasi...', 'info');
+    setTimeout(() => {
+      window.location.reload();
+    }, 700);
   }
 }
 
@@ -1519,6 +1694,7 @@ function handleLogout() {
 
 function performLogout() {
   document.documentElement.classList.remove('is-logged-in');
+  document.documentElement.classList.remove('is-admin');
   document.documentElement.removeAttribute('data-active-tab');
   localStorage.removeItem(STORAGE_KEYS.SESSION);
   localStorage.removeItem(STORAGE_KEYS.LAST_TAB);
@@ -1543,14 +1719,27 @@ function updateModeNavVisibility(targetTabId) {
     state.currentMode = 'teknisi';
   } else if (targetTabId === 'tab-pipo') {
     state.currentMode = 'pipo';
+  } else if (targetTabId === 'tab-pencapaian-pds') {
+    state.currentMode = 'pds';
   } else if (targetTabId === 'tab-finish' || targetTabId === 'tab-finish-all') {
     state.currentMode = 'finish';
+  } else if (targetTabId === 'tab-profile') {
+    if (!state.currentMode || state.currentMode === 'menu') {
+      state.currentMode = 'teknisi';
+    }
+  }
+
+  if (state.currentMode) {
+    try {
+      localStorage.setItem('teknisi_last_active_mode', state.currentMode);
+      document.documentElement.setAttribute('data-current-mode', state.currentMode);
+    } catch(e) {}
   }
 
   // 1. PSW Status Badge (PSW: ON/OFF)
-  // Hide on PIPO, Finish, Teknisi portal, and Menu hub. Show ONLY on Scan mode or Profile.
+  // Hide on Profile, PIPO, Finish, Teknisi portal, and Menu hub. Show ONLY on Scan mode!
   if (DOM.headerPswStatus) {
-    DOM.headerPswStatus.classList.toggle('hidden', state.currentMode !== 'scan' && targetTabId !== 'tab-profile');
+    DOM.headerPswStatus.classList.toggle('hidden', state.currentMode !== 'scan' || targetTabId === 'tab-profile');
   }
 
   // 2. Header LIHAT DATA Button (#header-btn-missing)
@@ -1601,6 +1790,10 @@ function updateModeNavVisibility(targetTabId) {
 }
 
 function switchTab(targetTabId, pushState = true) {
+  if (targetTabId === 'tab-users' && !state.isAdmin) {
+    showToast('Akses ditolak: Halaman User hanya dapat diakses oleh Admin!', 'error');
+    targetTabId = 'tab-menu';
+  }
   if (state.activeTab === targetTabId) return;
 
   if (pushState) {
@@ -2186,7 +2379,82 @@ function saveProfileSilently() {
 // ==========================================
 // HISTORY RENDERER
 // ==========================================
-function renderHistory() {
+async function renderHistory() {
+  if (!DOM.historyList) return;
+
+  if (state.isAdmin && state.supabaseClient) {
+    DOM.historyList.innerHTML = `
+      <div class="empty-state-sm">
+        <i data-lucide="loader-2" class="spin-lg"></i>
+        <p>Memuat seluruh riwayat transfer stok dari Supabase...</p>
+      </div>`;
+    lucide.createIcons();
+
+    try {
+      const { data, error } = await state.supabaseClient
+        .from(SUPABASE_CONFIG.table)
+        .select('id, created_at, no_gudang, qty, nama_teknisi, teknisi_nik, status')
+        .order('created_at', { ascending: false })
+        .limit(300);
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        DOM.historyList.innerHTML = `
+          <div class="empty-state-sm">
+            <i data-lucide="inbox"></i>
+            <p>Belum ada data transaksi transfer stok di Supabase.</p>
+          </div>`;
+        lucide.createIcons();
+        return;
+      }
+
+      DOM.historyList.innerHTML = data.map(item => {
+        let dateFormatted = '-';
+        if (item.created_at) {
+          try {
+            const dt = new Date(item.created_at);
+            const datePart = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+            const timePart = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            dateFormatted = `${datePart}, ${timePart}`;
+          } catch(e) {
+            dateFormatted = String(item.created_at);
+          }
+        }
+
+        const teknisiName = item.nama_teknisi || item.teknisi_nik || 'Teknisi';
+        const partName = item.no_gudang || '-';
+        const qtyVal = (item.qty !== undefined && item.qty !== null) ? item.qty : 1;
+
+        return `
+          <div class="history-item">
+            <div style="flex: 1; padding-right: 8px;">
+              <div class="item-gudang" style="font-weight: 700; font-size: 12.5px; color: var(--text-main);">${escapeHtml(partName)}</div>
+              <div class="item-meta" style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">
+                <span style="color: var(--primary); font-weight: 700;">${escapeHtml(teknisiName)}</span> • ${dateFormatted}
+              </div>
+            </div>
+            <div style="text-align: right; flex-shrink: 0;">
+              <span class="item-qty-plain" style="font-weight: 800; font-size: 11.5px; color: var(--primary); background: var(--primary-light); padding: 3px 8px; border-radius: 4px;">Qty: ${qtyVal}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    } catch (err) {
+      console.error('Error fetching Supabase history for Admin:', err);
+      DOM.historyList.innerHTML = `
+        <div class="empty-state-sm">
+          <i data-lucide="alert-circle" class="text-danger"></i>
+          <p>Gagal memuat riwayat Supabase: ${escapeHtml(err.message)}</p>
+        </div>`;
+      lucide.createIcons();
+    }
+    return;
+  }
+
+  // Non-Admin Technician Local History View
   if (!state.history || state.history.length === 0) {
     DOM.historyList.innerHTML = `
       <div class="empty-state-sm">
@@ -2198,13 +2466,18 @@ function renderHistory() {
   }
 
   DOM.historyList.innerHTML = state.history.map(item => {
-    const timeFormatted = new Date(item.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    let timeFormatted = '-';
+    if (item.created_at) {
+      try {
+        timeFormatted = new Date(item.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      } catch(e) {}
+    }
 
     return `
       <div class="history-item">
         <div>
           <div class="item-gudang">${escapeHtml(item.no_gudang)}</div>
-          <div class="item-meta">${escapeHtml(item.nama_teknisi)} • ${timeFormatted}</div>
+          <div class="item-meta">${escapeHtml(item.nama_teknisi || state.profile.nama)} • ${timeFormatted}</div>
         </div>
         <span class="item-qty-plain">Qty: ${item.qty}</span>
       </div>
@@ -2496,7 +2769,6 @@ async function performDeleteUser() {
 // ==========================================
 // GOOGLE SHEETS LIVE DATA INTEGRATION & CACHE MODULE
 // ==========================================
-const GOOGLE_SHEET_ID = '1YhZ9aC-ypray0WwSZxY5dXNVraqLm-BNIuyWYNUkUQ0';
 const GOOGLE_SHEET_ID_PIPO = '1cFbwWRRxD6vj7XNFLzmxF_Mma9TP3qvsdMSEYIDg47M';
 
 window.copyTextToClipboard = function(text, label = 'Kode Part') {
@@ -3610,7 +3882,6 @@ async function fetchGVizSheet(sheetName, range = 'A1:Z1000', noHeaders = false) 
 }
 
 function extractMatrixFromGViz(table) {
-  if (!table || !table.rows) return [];
   return table.rows.map(row => {
     if (!row || !row.c) return [];
     return row.c.map(cell => {
@@ -3622,6 +3893,32 @@ function extractMatrixFromGViz(table) {
   });
 }
 
+async function fetchSheetMatrix(sheetName, range = '') {
+  if (typeof APPS_SCRIPT_WEB_APP_URL !== 'undefined' && APPS_SCRIPT_WEB_APP_URL && APPS_SCRIPT_WEB_APP_URL.trim() !== '') {
+    try {
+      const resp = await fetch(APPS_SCRIPT_WEB_APP_URL);
+      if (resp && resp.ok) {
+        const json = await resp.json();
+        if (json && json.status === 'success') {
+          if (sheetName.toUpperCase() === 'DATA' && json.data && Array.isArray(json.data) && json.data.length > 0) {
+            return json.data;
+          }
+          if (sheetName.toUpperCase() === 'NOTIF' && json.notif && Array.isArray(json.notif) && json.notif.length > 0) {
+            return json.notif;
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  try {
+    const table = await fetchGVizSheet(sheetName, range || 'A1:BZ2000');
+    return extractMatrixFromGViz(table);
+  } catch (e) {
+    return [];
+  }
+}
+
 async function fetchGoogleSheetsData() {
   if (!state.isLoggedIn || state.isFetchingSheets) return;
   state.isFetchingSheets = true;
@@ -3629,6 +3926,7 @@ async function fetchGoogleSheetsData() {
   if (DOM.syncIcon) DOM.syncIcon.classList.add('spinning');
 
   try {
+    const rowsFullData = await fetchSheetMatrix('DATA', 'A1:BZ2000').catch(() => []);
     const [tableData, tableAcAl, tableNotif] = await Promise.all([
       fetchGVizSheet('DATA', 'A1:Z1000'),
       fetchGVizSheet('DATA', 'AC1:AL1000', true),
@@ -3713,7 +4011,7 @@ async function fetchGoogleSheetsData() {
           layanan: row[4] || '',
           stok_in: row[5] || '',
           status: row[6] || '',
-          teknisi: row[7] || '',
+          teknisi: rowTech || '',
           ket_part: row[8] || '',
           usia: row[9] || ''
         });
@@ -3842,6 +4140,65 @@ async function fetchGoogleSheetsData() {
       }
     }
 
+    // 9. Pencapaian PDS (Sheet DATA, Column AL / Index 37 or scan row)
+    const pdsRows = [];
+    const sourcePdsData = (rowsFullData && rowsFullData.length > 0) ? rowsFullData : rowsData;
+    if (sourcePdsData && sourcePdsData.length > 0) {
+      for (let r = 0; r < sourcePdsData.length; r++) {
+        const row = sourcePdsData[r];
+        if (!row || row.length === 0) continue;
+
+        let colIdx = 37;
+        let cellVal = (row[colIdx] !== undefined && row[colIdx] !== null) ? String(row[colIdx]).trim() : '';
+
+        if (!cellVal.toUpperCase().startsWith('LOAD ')) {
+          for (let c = 0; c < row.length; c++) {
+            const v = String(row[c] || '').trim();
+            if (v.toUpperCase().startsWith('LOAD ')) {
+              colIdx = c;
+              cellVal = v;
+              break;
+            }
+          }
+        }
+
+        if (cellVal.toUpperCase().startsWith('LOAD ')) {
+          let siteName = cellVal.replace(/^LOAD\s+/i, '').trim();
+          siteName = siteName.replace(/[\s,]+dkk.*$/i, '').trim();
+
+          const loadValRaw = (sourcePdsData[r + 1] && sourcePdsData[r + 1][colIdx] !== undefined) ? String(sourcePdsData[r + 1][colIdx]).trim() : '0';
+          const pendingValRaw = (sourcePdsData[r + 2] && sourcePdsData[r + 2][colIdx] !== undefined) ? String(sourcePdsData[r + 2][colIdx]).trim() : '0';
+          const pctValRaw = (sourcePdsData[r + 3] && sourcePdsData[r + 3][colIdx] !== undefined) ? String(sourcePdsData[r + 3][colIdx]).trim() : '0%';
+
+          const loadNum = parseInt(loadValRaw.replace(/[^0-9]/g, ''), 10) || 0;
+          const pendingNum = parseInt(pendingValRaw.replace(/[^0-9]/g, ''), 10) || 0;
+
+          let pctDisplay = pctValRaw;
+          if (!pctDisplay || pctDisplay.includes('#DIV/0!') || pctDisplay === 'NaN' || pctDisplay === '0') {
+            if (loadNum > 0) {
+              const calcPct = ((pendingNum / loadNum) * 100).toFixed(1);
+              pctDisplay = calcPct.endsWith('.0') ? Math.round(calcPct) + '%' : calcPct + '%';
+            } else {
+              pctDisplay = '0%';
+            }
+          }
+
+          let pctNum = parseFloat(pctDisplay.replace('%', '').trim()) || 0;
+          if (isNaN(pctNum)) pctNum = 0;
+
+          pdsRows.push({
+            site: siteName || 'SITE',
+            load: loadNum,
+            loadRaw: loadValRaw || '0',
+            pending: pendingNum,
+            pendingRaw: pendingValRaw || '0',
+            pctPending: pctDisplay,
+            pctNum: pctNum
+          });
+        }
+      }
+    }
+
     // Update state & single source of truth cache
     state.sheetsData = {
       lastUpdateTimestamp: pendingTimestamp,
@@ -3856,7 +4213,8 @@ async function fetchGoogleSheetsData() {
       outputHariIni,
       notifications,
       partBelumKembali,
-      tagihanRows
+      tagihanRows,
+      pdsRows
     };
 
     saveSheetsCache();
@@ -3890,6 +4248,7 @@ function renderAllSheetsViews() {
   renderNotifTab();
   renderPartKembaliTab();
   renderTagihanTab();
+  renderPdsTab();
   updateBadges();
 }
 
@@ -4270,4 +4629,293 @@ function renderTagihanTab() {
   `).join('');
 
   lucide.createIcons();
+}
+
+// ==========================================
+// PENCAPAIAN PDS MODULE & CHART RENDERER
+// ==========================================
+let lastPdsHash = '';
+
+function renderPdsTab() {
+  if (!DOM.pdsContentContainer) return;
+  const pdsList = state.sheetsData.pdsRows || [];
+
+  if (DOM.pdsSiteCount) {
+    DOM.pdsSiteCount.textContent = `${pdsList.length} Site`;
+  }
+
+  if (pdsList.length === 0) {
+    DOM.pdsContentContainer.innerHTML = `
+      <div class="empty-state-sm">
+        <i data-lucide="bar-chart-3" style="width:32px; height:32px; color:var(--text-muted); margin-bottom:6px;"></i>
+        <p>Belum ada data Pencapaian PDS dari Sheet.</p>
+      </div>`;
+    lucide.createIcons();
+    lastPdsHash = '';
+    return;
+  }
+
+  const newHash = JSON.stringify(pdsList);
+  const canvasExists = !!document.getElementById('pdsChartCanvas');
+
+  // If canvas exists and data is unchanged, skip DOM touch completely (zero flicker)
+  if (canvasExists && lastPdsHash === newHash && window.pdsChartInstance) {
+    return;
+  }
+
+  // Calculate Aggregated Totals
+  let totalLoad = 0;
+  let totalPending = 0;
+  pdsList.forEach(item => {
+    totalLoad += item.load;
+    totalPending += item.pending;
+  });
+
+  const overallPctVal = totalLoad > 0 ? ((totalPending / totalLoad) * 100).toFixed(1) : '0';
+  const overallPctStr = overallPctVal.endsWith('.0') ? Math.round(overallPctVal) + '%' : overallPctVal + '%';
+
+  // If Canvas & Chart already exist in DOM, update in-place smoothly (zero flicker!)
+  if (canvasExists && window.pdsChartInstance) {
+    lastPdsHash = newHash;
+
+    const loadEl = document.getElementById('pds-total-load');
+    const pendingEl = document.getElementById('pds-total-pending');
+    const pctEl = document.getElementById('pds-total-pct');
+    if (loadEl) loadEl.textContent = totalLoad.toLocaleString('id-ID');
+    if (pendingEl) pendingEl.textContent = totalPending.toLocaleString('id-ID');
+    if (pctEl) {
+      pctEl.textContent = overallPctStr;
+      pctEl.style.color = parseFloat(overallPctVal) > 5 ? 'var(--danger)' : 'var(--success)';
+    }
+
+    pdsList.forEach(item => {
+      const siteId = (item.site || 'SITE').replace(/[^a-zA-Z0-9]/g, '');
+      const loadValEl = document.getElementById(`pds-site-load-${siteId}`);
+      const pendingValEl = document.getElementById(`pds-site-pending-${siteId}`);
+      const pctValEl = document.getElementById(`pds-site-pct-${siteId}`);
+      const barEl = document.getElementById(`pds-site-bar-${siteId}`);
+
+      if (loadValEl) loadValEl.textContent = item.load.toLocaleString('id-ID');
+      if (pendingValEl) pendingValEl.textContent = item.pending.toLocaleString('id-ID');
+
+      const isZeroLoad = item.load === 0;
+      const isHighPending = item.pctNum > 5;
+      const badgeColor = isZeroLoad ? 'var(--text-muted)' : (isHighPending ? 'var(--danger)' : 'var(--primary)');
+      let pctBarWidth = Math.min(100, Math.max(0, item.pctNum));
+      if (isZeroLoad) pctBarWidth = 0;
+
+      if (pctValEl) {
+        pctValEl.textContent = item.pctPending;
+        pctValEl.style.color = badgeColor;
+      }
+      if (barEl) {
+        barEl.style.width = pctBarWidth + '%';
+        barEl.style.background = badgeColor;
+      }
+    });
+
+    renderPdsChart(pdsList);
+    return;
+  }
+
+  // Initial full render (first load)
+  lastPdsHash = newHash;
+
+  let html = `
+    <div class="pds-summary-card mb-2" style="background:var(--bg-card); border:1px solid var(--border-color); border-left:4px solid var(--primary); padding:10px 12px; border-radius:var(--radius-sm); box-shadow:var(--shadow-main); display:flex; flex-direction:column; gap:8px;">
+      <div class="flex-between align-center">
+        <div style="font-size:12px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+          <i data-lucide="award" style="color:var(--primary); width:15px; height:15px;"></i>
+          <span>RINGKASAN PENCAPAIAN PDS ALL SITE</span>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; text-align:center;">
+        <div style="background:var(--bg-input); padding:6px 4px; border-radius:4px; border:1px solid var(--border-color);">
+          <div style="font-size:9.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">TOTAL LOAD</div>
+          <div id="pds-total-load" style="font-size:15px; font-weight:800; color:var(--primary); margin-top:2px;">${totalLoad.toLocaleString('id-ID')}</div>
+        </div>
+        <div style="background:var(--bg-input); padding:6px 4px; border-radius:4px; border:1px solid var(--border-color);">
+          <div style="font-size:9.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">TOTAL PENDING</div>
+          <div id="pds-total-pending" style="font-size:15px; font-weight:800; color:var(--warning); margin-top:2px;">${totalPending.toLocaleString('id-ID')}</div>
+        </div>
+        <div style="background:var(--bg-input); padding:6px 4px; border-radius:4px; border:1px solid var(--border-color);">
+          <div style="font-size:9.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">% PENDING</div>
+          <div id="pds-total-pct" style="font-size:15px; font-weight:800; color:${parseFloat(overallPctVal) > 5 ? 'var(--danger)' : 'var(--success)'}; margin-top:2px;">${overallPctStr}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // 2. Chart Box (Grafik Pencapaian All Site)
+  html += `
+    <div class="card pds-chart-card mb-2" style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px 12px; box-shadow:var(--shadow-main); display:flex; flex-direction:column; gap:8px;">
+      <div class="flex-between align-center" style="border-bottom:1px dashed var(--border-color); padding-bottom:6px;">
+        <div style="font-size:12px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+          <i data-lucide="bar-chart-2" style="color:var(--secondary); width:15px; height:15px;"></i>
+          <span>GRAFIK PENCAPAIAN ALL SITE</span>
+        </div>
+        <div style="font-size:10px; color:var(--text-muted); display:flex; gap:10px; font-weight:700;">
+          <span style="color:var(--primary); display:flex; align-items:center; gap:3px;"><span style="width:8px; height:8px; background:var(--primary); border-radius:2px; display:inline-block;"></span> Load</span>
+          <span style="color:var(--warning); display:flex; align-items:center; gap:3px;"><span style="width:8px; height:8px; background:var(--warning); border-radius:2px; display:inline-block;"></span> Pending</span>
+        </div>
+      </div>
+      <div class="chart-canvas-wrapper" style="position:relative; width:100%; height:200px;">
+        <canvas id="pdsChartCanvas"></canvas>
+      </div>
+    </div>
+  `;
+
+  // 3. Grid Cards for Each Site
+  html += `<div class="pds-site-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px; margin-top:2px;">`;
+
+  pdsList.forEach(item => {
+    const siteId = (item.site || 'SITE').replace(/[^a-zA-Z0-9]/g, '');
+    const isZeroLoad = item.load === 0;
+    const isHighPending = item.pctNum > 5;
+    const badgeColor = isZeroLoad ? 'var(--text-muted)' : (isHighPending ? 'var(--danger)' : 'var(--primary)');
+
+    let pctBarWidth = Math.min(100, Math.max(0, item.pctNum));
+    if (isZeroLoad) pctBarWidth = 0;
+
+    html += `
+      <div class="pds-site-card" style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px 12px; display:flex; flex-direction:column; gap:8px; box-shadow:var(--shadow-main);">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:30px; height:30px; border-radius:6px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              <i data-lucide="building-2" style="width:16px; height:16px;"></i>
+            </div>
+            <div>
+              <div style="font-size:14px; font-weight:800; color:var(--text-main); line-height:1.1;">${escapeHtml(item.site)}</div>
+              <div style="font-size:9.5px; color:var(--text-muted);">Data Load & Pending PDS</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; background:var(--bg-input); padding:8px; border-radius:4px; border:1px solid var(--border-color);">
+          <div>
+            <div style="font-size:9.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">LOAD BULAN INI</div>
+            <div id="pds-site-load-${siteId}" style="font-size:15px; font-weight:800; color:var(--primary); margin-top:2px;">${item.load.toLocaleString('id-ID')}</div>
+          </div>
+          <div style="border-left:1px solid var(--border-color); padding-left:8px;">
+            <div style="font-size:9.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">PENDING BULAN INI</div>
+            <div id="pds-site-pending-${siteId}" style="font-size:15px; font-weight:800; color:var(--warning); margin-top:2px;">${item.pending.toLocaleString('id-ID')}</div>
+          </div>
+        </div>
+
+        <!-- Visual Progress Bar for % Pending -->
+        <div style="display:flex; flex-direction:column; gap:3px;">
+          <div style="display:flex; justify-content:space-between; font-size:9.5px; font-weight:700; color:var(--text-muted);">
+            <span>Status Pending</span>
+            <span id="pds-site-pct-${siteId}" style="color:${badgeColor};">${escapeHtml(item.pctPending)}</span>
+          </div>
+          <div style="width:100%; height:6px; background:var(--bg-input); border-radius:3px; overflow:hidden; border:1px solid var(--border-color);">
+            <div id="pds-site-bar-${siteId}" style="width:${pctBarWidth}%; height:100%; background:${badgeColor}; transition:width 0.4s ease;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+
+  DOM.pdsContentContainer.innerHTML = html;
+  lucide.createIcons();
+
+  renderPdsChart(pdsList);
+}
+
+function renderPdsChart(pdsList) {
+  const canvas = document.getElementById('pdsChartCanvas');
+  if (!canvas) return;
+
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not loaded');
+    return;
+  }
+
+  const labels = pdsList.map(item => item.site);
+  const loadData = pdsList.map(item => item.load);
+  const pendingData = pdsList.map(item => item.pending);
+
+  // If Chart instance exists, update data smoothly in-place with 0 animation flicker!
+  if (window.pdsChartInstance) {
+    try {
+      window.pdsChartInstance.data.labels = labels;
+      window.pdsChartInstance.data.datasets[0].data = loadData;
+      window.pdsChartInstance.data.datasets[1].data = pendingData;
+      window.pdsChartInstance.update('none');
+      return;
+    } catch (e) {
+      try { window.pdsChartInstance.destroy(); } catch (err) {}
+      window.pdsChartInstance = null;
+    }
+  }
+
+  const isDark = state.theme === 'dark';
+  const textColor = isDark ? '#94a3b8' : '#475569';
+  const gridColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.07)';
+
+  const ctx = canvas.getContext('2d');
+  window.pdsChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Load Bulan Ini',
+          data: loadData,
+          backgroundColor: '#10b981',
+          borderColor: '#059669',
+          borderWidth: 1,
+          borderRadius: 4
+        },
+        {
+          label: 'Pending Bulan Ini',
+          data: pendingData,
+          backgroundColor: '#f59e0b',
+          borderColor: '#d97706',
+          borderWidth: 1,
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            footer: function(tooltipItems) {
+              const idx = tooltipItems[0].dataIndex;
+              if (pdsList[idx]) {
+                return '% Pending: ' + pdsList[idx].pctPending;
+              }
+              return '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: {
+            color: textColor,
+            font: { size: 10, family: 'Plus Jakarta Sans', weight: 'bold' }
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: gridColor },
+          ticks: {
+            color: textColor,
+            font: { size: 10, family: 'Plus Jakarta Sans' }
+          }
+        }
+      }
+    }
+  });
 }

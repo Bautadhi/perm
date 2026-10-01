@@ -10,6 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
+  <!-- Chart.js for PDS Visual Graph -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   
@@ -22,7 +25,7 @@
   <!-- App Favicon (Part Box & Laser Scanner Icon) -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-  <link rel="stylesheet" href="style.css?v=14.1" />
+  <link rel="stylesheet" href="style.css?v=28.0" />
   <script>
     window.__INIT_NAMA__ = '';
     window.__INIT_NIK__ = '';
@@ -42,13 +45,24 @@
         var p = JSON.parse(sess);
         if (p && p.isLoggedIn) {
           document.documentElement.classList.add('is-logged-in');
+          var isAdmin = (p.nik && (p.nik.toUpperCase() === 'ADMIN' || p.isAdmin));
+          if (isAdmin) {
+            document.documentElement.classList.add('is-admin');
+          } else {
+            document.documentElement.classList.remove('is-admin');
+          }
           var hashTab = window.location.hash ? window.location.hash.replace('#', '') : '';
           var savedTab = localStorage.getItem('teknisi_last_active_tab');
-          var validTabs = ['tab-menu', 'tab-scan', 'tab-history', 'tab-pending', 'tab-performa', 'tab-notif', 'tab-part-kembali', 'tab-tagihan', 'tab-pipo', 'tab-finish', 'tab-finish-all', 'tab-profile'];
+          var savedMode = localStorage.getItem('teknisi_last_active_mode');
+          var validTabs = ['tab-menu', 'tab-scan', 'tab-history', 'tab-pending', 'tab-performa', 'tab-notif', 'tab-part-kembali', 'tab-tagihan', 'tab-pipo', 'tab-finish', 'tab-finish-all', 'tab-profile', 'tab-pencapaian-pds'];
+          if (isAdmin) validTabs.push('tab-users');
           var activeTab = (hashTab && validTabs.indexOf(hashTab) !== -1) ? hashTab : ((savedTab && validTabs.indexOf(savedTab) !== -1) ? savedTab : 'tab-menu');
+          if (activeTab === 'tab-pencapaian-pds') savedMode = 'pds';
+          if (!savedMode || savedMode === 'menu') savedMode = 'teknisi';
           document.documentElement.setAttribute('data-active-tab', activeTab);
+          document.documentElement.setAttribute('data-current-mode', savedMode);
 
-          if (p.nik && p.nik.toUpperCase() === 'ADMIN') {
+          if (isAdmin) {
             window.__INIT_NAMA__ = 'Administrator';
             window.__INIT_NIK__ = 'ADMIN';
           } else {
@@ -98,7 +112,8 @@
             <div class="form-group">
               <label for="login-password">Password</label>
               <div class="input-icon-wrapper">
-                <input type="password" id="login-password" placeholder="Password akun..." required style="padding-left:12px;" />
+                <i data-lucide="key" class="input-icon"></i>
+                <input type="password" id="login-password" placeholder="Password akun..." required />
                 <button type="button" id="btn-login-psw-toggle" class="btn-clear" title="Lihat Password">
                   <i data-lucide="eye" id="login-psw-eye"></i>
                 </button>
@@ -142,6 +157,12 @@
           </div>
           <button type="button" id="header-btn-missing" class="header-psw-badge" style="background:var(--primary); border:1px solid rgba(255,255,255,0.4);" title="Cek tanggal laporan yang belum diisi">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg> <span>Cek Tanggal Belum Isi</span>
+          </button>
+          <button type="button" id="header-btn-users" class="header-psw-badge admin-only hidden" style="background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.4); cursor:pointer;" title="Kelola / Pengaturan User (Admin Only)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> <span>Pengaturan User</span>
+          </button>
+          <button type="button" id="header-btn-profile" class="header-psw-badge" style="background:rgba(255,255,255,0.22); border:1px solid rgba(255,255,255,0.4); cursor:pointer; padding: 5px 8px;" title="Buka Halaman Akun / Profil">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user-cog"><circle cx="18" cy="15" r="3"/><circle cx="9" cy="7" r="4"/><path d="M10 15H6a4 4 0 0 0-4 4v2"/><path d="m21.7 16.4-.9-.3"/><path d="m15.2 13.9-.9-.3"/><path d="m16.4 21.7-.3-.9"/><path d="m13.9 15.2-.3-.9"/><path d="m21.7 13.6-.9.3"/><path d="m15.2 16.1-.9.3"/><path d="m13.9 14.8-.3.9"/><path d="m16.4 8.3-.3.9"/></svg>
           </button>
         </div>
       </header>
@@ -210,6 +231,21 @@
               </div>
             </div>
 
+            <!-- MODE 5: PENCAPAIAN PDS -->
+            <div class="mode-card mode-pds" id="btn-select-mode-pds">
+              <div class="mode-card-icon">
+                <i data-lucide="bar-chart-3"></i>
+              </div>
+              <div class="mode-card-content">
+                <h3>PENCAPAIAN PDS</h3>
+                <p>Cek data Load, Pending & % Pending per site serta Grafik Pencapaian All Site.</p>
+                <div class="mode-card-btn">
+                  <span>BUKA PENCAPAIAN PDS</span>
+                  <i data-lucide="arrow-right"></i>
+                </div>
+              </div>
+            </div>
+
             <!-- MODE 4: INPUT FINISH HARIAN TEKNISI -->
             <div class="mode-card mode-finish" id="btn-select-mode-finish">
               <div class="mode-card-icon">
@@ -222,6 +258,25 @@
                   <span>BUKA INPUT FINISH</span>
                   <i data-lucide="arrow-right"></i>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- TAB: PENCAPAIAN PDS (COLUMN AL GOOGLE SHEET DATA) -->
+        <section id="tab-pencapaian-pds" class="tab-content">
+          <div class="card pds-main-card" style="height:100%; display:flex; flex-direction:column; min-height:0; overflow:hidden; padding:10px;">
+            <div class="card-header flex-between align-center" style="flex:0 0 auto; margin-bottom:8px; border-bottom:1px solid var(--border-color); padding-bottom:6px;">
+              <div class="card-title" style="color:var(--primary); font-size:14px; font-weight:700; display:flex; align-items:center; gap:6px;">
+                <i data-lucide="bar-chart-3"></i> Pencapaian PDS (All Site)
+              </div>
+            </div>
+
+            <!-- Scrollable List & Chart Container -->
+            <div id="pds-content-container" class="pds-container" style="flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:2px;">
+              <div class="empty-state-sm">
+                <i data-lucide="loader-2" class="spin-lg"></i>
+                <p>Memuat data Pencapaian PDS...</p>
               </div>
             </div>
           </div>
@@ -487,13 +542,18 @@
         <!-- TAB 5: RIWAYAT / STATUS LOGS -->
         <section id="tab-history" class="tab-content">
           <div class="card">
-            <div class="card-header">
+            <div class="card-header flex-between align-center">
               <div class="card-title">
                 <i data-lucide="history"></i> Riwayat Submit Data
               </div>
-              <button id="btn-clear-history" class="btn-icon text-danger" title="Hapus Riwayat">
-                <i data-lucide="trash-2"></i>
-              </button>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <button type="button" id="btn-refresh-history" class="btn btn-ghost btn-xs" style="font-size: 11px; font-weight: 700; gap: 4px; padding: 4px 8px; border-radius: 4px;" title="Refresh Data Riwayat">
+                  <i data-lucide="refresh-cw" id="sync-icon-history"></i> Refresh
+                </button>
+                <button type="button" id="btn-clear-history" class="btn-icon text-danger" title="Hapus Riwayat">
+                  <i data-lucide="trash-2"></i>
+                </button>
+              </div>
             </div>
             <div id="history-list" class="history-container">
               <div class="empty-state-sm">
@@ -698,11 +758,21 @@
                 </div>
               </div>
 
-              <!-- Tombol Logout (Desktop Left Column) -->
-              <div class="logout-wrapper desktop-only">
-                <button type="button" id="btn-logout" class="btn btn-ghost btn-block btn-sm text-danger" style="border: 1px solid rgba(239,68,68,0.3); background: rgba(239,68,68,0.08);">
-                  <i data-lucide="log-out"></i> KELUAR AKUN (LOGOUT)
-                </button>
+              <!-- Card Gabungan Pembersihan Cache & Logout -->
+              <div class="card account-actions-card">
+                <div class="card-title mb-2" style="font-size: 13px; font-weight: 700;">
+                  <i data-lucide="shield-alert"></i> Tindakan Akun & Cache
+                </div>
+                <div class="account-actions-group" style="display: flex; flex-direction: column; gap: 10px;">
+                  <button type="button" id="btn-clear-app-cache" class="btn btn-ghost btn-block btn-sm" style="font-size: 11px; font-weight: 700; gap: 6px; color: var(--warning); border-color: var(--warning); padding: 9px 10px; border-radius: 6px;">
+                    <i data-lucide="trash-2"></i>
+                    <span>HAPUS CACHE APLIKASI</span>
+                  </button>
+                  <button type="button" id="btn-logout" class="btn btn-secondary btn-block" style="height: 44px; border-radius: 6px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-out"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                    <span>KELUAR AKUN (LOGOUT)</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -711,15 +781,23 @@
               <!-- Card Form Edit Profil -->
               <div class="card card-profile-form">
                 <div class="card-title mb-2">
-                  <i data-lucide="user-cog"></i> Pengaturan Akun Teknisi
+                  <i data-lucide="user-cog"></i> Informasi Akun Teknisi
                 </div>
 
                 <form id="form-profile" onsubmit="return false;">
                   <div class="form-group mb-2">
+                    <label for="profile-area">Area Kerja / Operasional</label>
+                    <div class="input-icon-wrapper">
+                      <i data-lucide="map-pin" class="input-icon"></i>
+                      <input type="text" id="profile-area" value="Tasikmalaya" readonly title="Area operasional teknisi" />
+                    </div>
+                  </div>
+
+                  <div class="form-group mb-2">
                     <label for="profile-nama">Nama Teknisi</label>
                     <div class="input-icon-wrapper">
                       <i data-lucide="user" class="input-icon"></i>
-                      <input type="text" id="profile-nama" placeholder="Masukkan nama..." required />
+                      <input type="text" id="profile-nama" placeholder="Nama..." readonly title="Pengubahan nama hanya melalui halaman Kelola User" />
                     </div>
                   </div>
 
@@ -727,45 +805,24 @@
                     <label for="profile-nik">NIK (Nomor Induk Karyawan)</label>
                     <div class="input-icon-wrapper">
                       <i data-lucide="id-card" class="input-icon"></i>
-                      <input type="text" id="profile-nik" placeholder="Masukkan NIK..." required />
+                      <input type="text" id="profile-nik" placeholder="NIK..." readonly title="Pengubahan NIK hanya melalui halaman Kelola User" />
                     </div>
                   </div>
 
                   <div class="form-group mb-2">
                     <label for="profile-psw">Password Akses Web Target</label>
                     <div class="input-icon-wrapper">
-                      <input type="password" id="profile-psw" placeholder="Password akun web..." style="padding-left:12px;" />
+                      <i data-lucide="key" class="input-icon"></i>
+                      <input type="password" id="profile-psw" placeholder="Password akun..." readonly title="Pengubahan Password hanya melalui halaman Kelola User" />
                       <button type="button" id="btn-toggle-psw-visibility" class="btn-clear" title="Lihat Password">
                         <i data-lucide="eye" id="psw-eye-icon"></i>
                       </button>
                     </div>
                   </div>
-
-                  <!-- Switch Status PSW -->
-                  <div class="switch-card mb-3">
-                    <div class="switch-info">
-                      <div class="switch-label">
-                        <i data-lucide="shield-check"></i> STATUS PSW
-                      </div>
-                    </div>
-                    <label class="toggle-switch">
-                      <input type="checkbox" id="profile-psw-toggle" />
-                      <span class="slider"></span>
-                    </label>
-                  </div>
-
-                  <button type="button" id="btn-save-profile" class="btn btn-primary btn-block btn-sm">
-                    <i data-lucide="save"></i> Simpan Profil & Pengaturan
-                  </button>
                 </form>
               </div>
 
-              <!-- Tombol Logout (Mobile Bottom) -->
-              <div class="logout-wrapper mobile-only">
-                <button type="button" class="btn btn-ghost btn-block btn-sm text-danger" onclick="document.getElementById('btn-logout').click()" style="border: 1px solid rgba(239,68,68,0.3); background: rgba(239,68,68,0.08);">
-                  <i data-lucide="log-out"></i> KELUAR AKUN (LOGOUT)
-                </button>
-              </div>
+
             </div>
           </div>
         </section>
@@ -818,48 +875,44 @@
         <!-- TAB 7: KELOLA USER (KHUSUS ADMIN) -->
         <section id="tab-users" class="tab-content">
           <!-- PENGATURAN MODUL & MENU APLIKASI (ADMIN) -->
-          <div class="card card-admin-settings mb-4">
+          <div class="card card-admin-settings mb-2">
             <div class="card-header flex-between">
               <div class="card-title">
                 <i data-lucide="sliders"></i> Pengaturan Modul & Menu Aplikasi
               </div>
             </div>
-            <div class="card-body" style="padding: 12px 14px;">
-              <div class="switch-card" style="margin-bottom: 0;">
-                <div class="switch-info">
-                  <div class="switch-label">
-                    <i data-lucide="qr-code"></i> TAMPILKAN MENU TRANSFER STOK
-                  </div>
-                  <div class="switch-subtext">Sembunyikan / tampilkan menu Transfer Stok di semua perangkat teknisi (Realtime: True / False)</div>
+            <div class="switch-card" style="margin-bottom: 0;">
+              <div class="switch-info">
+                <div class="switch-label">
+                  <i data-lucide="qr-code"></i> TAMPILKAN MENU TRANSFER STOK
                 </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="admin-transfer-stok-toggle" checked />
-                  <span class="slider"></span>
-                </label>
+                <div class="switch-subtext">Sembunyikan / tampilkan menu Transfer Stok di semua perangkat teknisi (Realtime: True / False)</div>
               </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="admin-transfer-stok-toggle" checked />
+                <span class="slider"></span>
+              </label>
             </div>
           </div>
 
           <!-- PENGATURAN MODE PROSES TRANSFER (KHUSUS MUNCUL JIKA TRANSFER STOK TERLIHAT) -->
-          <div id="admin-process-mode-container" class="card card-admin-settings mb-4" style="display: none;">
+          <div id="admin-process-mode-container" class="card card-admin-settings mb-2" style="display: none;">
             <div class="card-header flex-between">
               <div class="card-title">
                 <i data-lucide="cpu"></i> Mode Proses Transfer Stok (STAFPART / HODS)
               </div>
             </div>
-            <div class="card-body" style="padding: 12px 14px;">
-              <div class="switch-card" style="margin-bottom: 0;">
-                <div class="switch-info">
-                  <div class="switch-label">
-                    <i data-lucide="layers"></i> MODE PENGERJAAN: <strong id="admin-process-mode-label" style="color:var(--primary); font-weight: 800;">STAFPART</strong>
-                  </div>
-                  <div class="switch-subtext" id="admin-process-mode-desc">STAFPART: Memerlukan pilihan dropdown SKM / HIT saat pengerjaan stok.</div>
+            <div class="switch-card" style="margin-bottom: 0;">
+              <div class="switch-info">
+                <div class="switch-label">
+                  <i data-lucide="layers"></i> MODE PENGERJAAN: <strong id="admin-process-mode-label" style="color:var(--primary); font-weight: 800;">STAFPART</strong>
                 </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="admin-process-mode-toggle" />
-                  <span class="slider"></span>
-                </label>
+                <div class="switch-subtext" id="admin-process-mode-desc">STAFPART: Memerlukan pilihan dropdown SKM / HIT saat pengerjaan stok.</div>
               </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="admin-process-mode-toggle" />
+                <span class="slider"></span>
+              </label>
             </div>
           </div>
 
@@ -931,14 +984,7 @@
           <span>Pengganti</span>
         </button>
 
-        <button class="nav-item" data-target="tab-profile" data-mode="all">
-          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user-cog"><circle cx="18" cy="15" r="3"/><circle cx="9" cy="7" r="4"/><path d="M10 15H6a4 4 0 0 0-4 4v2"/><path d="m21.7 16.4-.9-.3"/><path d="m15.2 13.9-.9-.3"/><path d="m16.4 21.7-.3-.9"/><path d="m13.9 15.2-.3-.9"/><path d="m21.7 13.6-.9.3"/><path d="m15.2 16.1-.9.3"/><path d="m13.9 14.8-.3.9"/><path d="m16.4 8.3-.3.9"/></svg>
-          <span>Profil</span>
-        </button>
-        <button class="nav-item admin-only hidden" id="nav-item-users" data-target="tab-users" data-mode="all">
-          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span>User</span>
-        </button>
+
       </nav>
 
     </div>
@@ -1057,7 +1103,8 @@
             <div class="form-group">
               <label for="user-form-psw">Password Akses Web Target</label>
               <div class="input-icon-wrapper">
-                <input type="text" id="user-form-psw" placeholder="Password akun..." required style="padding-left:12px;" />
+                <i data-lucide="key" class="input-icon"></i>
+                <input type="text" id="user-form-psw" placeholder="Password akun..." required />
               </div>
             </div>
 
@@ -1094,6 +1141,6 @@
       lucide.createIcons();
     }
   </script>
-  <script src="app.js?v=14.0"></script>
+  <script src="app.js?v=16.0"></script>
 </body>
 </html>
